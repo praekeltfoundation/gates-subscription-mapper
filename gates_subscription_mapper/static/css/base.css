@@ -1,0 +1,11 @@
+body
+{
+    font-family: sans-serif;
+    margin: 40px auto;
+    max-width: 650px;
+}
+
+#logout
+{
+    float: right;
+}

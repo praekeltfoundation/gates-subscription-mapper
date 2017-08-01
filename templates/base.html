@@ -1,0 +1,15 @@
+{% load staticfiles %}
+<!doctype html>
+<html>
+    <head>
+        <title>{% block title %}{% endblock %}</title>
+        <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    </head>
+    <body>
+        {% if user.is_authenticated %}
+        <a id="logout" href="{% url 'logout'%}">Logout</a>
+        {% endif %}
+        <h1>Gates Subscription Mapper</h1>
+        {% block content %}{% endblock %}
+    </body>
+</html>
