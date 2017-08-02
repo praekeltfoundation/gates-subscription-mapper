@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
-from django.test import TestCase  # flake8: noqa
+from django.test import TestCase
 
-# Create your tests here.
+
+class MapperTests(TestCase):
+    def test_pass(self):
+        """
+        Sample test so that we can have passing unit tests.
+        """
+        self.assertTrue(True)
