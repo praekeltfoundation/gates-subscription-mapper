@@ -24,7 +24,7 @@ matrix:
       env:
         - IMAGE_NAME=praekeltfoundation/gates-subscription-mapper:develop
         - REGISTRY_USER=praekeltorgdeploy
-        - secure: ""
+        - secure: "TqDYJ/jMvQFOPB93uoG8VVZsdKeGdUaH8trs/GOBHiew6/Pk7qToDMLPKhJj3A6EQZWWDMbzdCnM/odQSgGeHHg+27ue3FXQ/2wnxaWiHjG5kfjv5QxFd9v0rCPYk7u8kWEiA0hC/t7gOpaT3U3OUR1UM2PQ9LqxWMLrH9864ypeCPtZnnj43CH6mGJZ5M2xmP1HwNKTI2dnLWbojhjtG4u0su3EmA2Uep/hwLg8hQv5Do/Wbjb2FnQGzg0pp9o1BcgoWSBYHLfYk2wfGe6RiyhbpQYiQxXkFlXdqc3tmTT8jJxAP4/nXRfDo9hIOJIgTz2QKMaW2hlXG3QDBIf8p+250WxrintJtlSpejD4CRcphxy9L8ynPIOgm3abNUnRjO+yNWVfxWE03Yo1lJs8l7y0A5jeV8m3cAkuRp5LZU2FonW6Mtadbi1ztiAR84rZazxkqKeL7puy0nQ1kZG0ohy6EWAsviDulTlWaBn0xiGQfp4CxPxoPdbv57Aslt/gt49nVRrdXe7FAerKkCtp1SLjKbcNBE7WT+dYiguIs/EjTXAUt2r4Cb89lt9Y+DwcrNnN58bgdJxhFP4xbmBlgGscSSNEYKqBhWk6U1cN3sudAn8ddHp/kCGy6Vo9y2nk5IS6jzSVhoVxIJB8fWTLIJf9/94LClMk5pLChUMRPAI="
       before_script:
         - docker pull "$IMAGE_NAME" || true
       script:
@@ -51,7 +51,7 @@ matrix:
       env:
         - IMAGE_NAME=praekeltfoundation/gates-subscription-mapper
         - REGISTRY_USER=praekeltorgdeploy
-        - secure: ""
+        - secure: "TqDYJ/jMvQFOPB93uoG8VVZsdKeGdUaH8trs/GOBHiew6/Pk7qToDMLPKhJj3A6EQZWWDMbzdCnM/odQSgGeHHg+27ue3FXQ/2wnxaWiHjG5kfjv5QxFd9v0rCPYk7u8kWEiA0hC/t7gOpaT3U3OUR1UM2PQ9LqxWMLrH9864ypeCPtZnnj43CH6mGJZ5M2xmP1HwNKTI2dnLWbojhjtG4u0su3EmA2Uep/hwLg8hQv5Do/Wbjb2FnQGzg0pp9o1BcgoWSBYHLfYk2wfGe6RiyhbpQYiQxXkFlXdqc3tmTT8jJxAP4/nXRfDo9hIOJIgTz2QKMaW2hlXG3QDBIf8p+250WxrintJtlSpejD4CRcphxy9L8ynPIOgm3abNUnRjO+yNWVfxWE03Yo1lJs8l7y0A5jeV8m3cAkuRp5LZU2FonW6Mtadbi1ztiAR84rZazxkqKeL7puy0nQ1kZG0ohy6EWAsviDulTlWaBn0xiGQfp4CxPxoPdbv57Aslt/gt49nVRrdXe7FAerKkCtp1SLjKbcNBE7WT+dYiguIs/EjTXAUt2r4Cb89lt9Y+DwcrNnN58bgdJxhFP4xbmBlgGscSSNEYKqBhWk6U1cN3sudAn8ddHp/kCGy6Vo9y2nk5IS6jzSVhoVxIJB8fWTLIJf9/94LClMk5pLChUMRPAI="
       before_script:
         - docker pull "$IMAGE_NAME" || true
       script:
