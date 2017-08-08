@@ -41,8 +41,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # 3rd party
+    'raven.contrib.django.raven_compat',
     # us
-    'mapper'
+    'mapper',
 ]
 
 USE_SSL = os.environ.get('USE_SSL', 'false').lower() == 'true'
