@@ -37,11 +37,14 @@ class MigrateSubscription(models.Model):
         "Total number of identities to process", null=True, blank=True)
     current = models.IntegerField(
         "Current count of processed identities", default=0)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['-created_at']),
+        ]
 
     def clean_task_id(self):
         return self.cleaned_data['task_id'] or None
