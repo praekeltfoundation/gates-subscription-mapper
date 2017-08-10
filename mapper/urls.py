@@ -4,5 +4,5 @@ from .views import MigrateSubscriptionListView
 
 urlpatterns = [
     url(
-        r'^$', MigrateSubscriptionListView.as_view()),
+        r'^$', MigrateSubscriptionListView.as_view(), name='migration-list'),
 ]
