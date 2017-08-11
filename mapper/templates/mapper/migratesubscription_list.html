@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
 {% load humanize %}
+{% load mapper_tags %}
 
 {% block title %}Gates Subscription Mapper{% endblock %}
 
@@ -9,6 +10,11 @@
 {% endblock %}
 
 {% block content %}
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Create task</button>
+</form>
 {% if migratesubscription_list %}
     <div class="model-list">
         <table>
@@ -25,8 +31,7 @@
                     <td>{{ migration.created_at | naturaltime }}</td>
                     <td>{% if migration.completed_at %}{{ migration.completed_at | naturaltime }}{% else %}-{% endif %}</td>
                     <td>{{ migration.column_name }} of {{ migration.table_name }}</td>
-                    {# TODO: Display name of messageset instead of ID #}
-                    <td>{{ migration.from_messageset }} to {{ migration.to_messageset }}</td>
+                    <td>{{ messagesets|lookup:migration.from_messageset }} to {{ messagesets|lookup:migration.to_messageset }}</td>
                     <td>{{ migration.get_status_display }} {{ migration.current }}/{% if migration.total %}{{ migration.total }}{% else %}-{% endif %}</td>
                     <td>{# TODO: Add action buttons here #}</td>
                 </tr>
