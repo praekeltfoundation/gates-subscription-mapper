@@ -1,7 +1,8 @@
 from django.conf.urls import url
 
-from .views import IndexView
+from .views import MigrateSubscriptionListView
 
 urlpatterns = [
-    url(r'^$', IndexView.as_view(), name='index'),
+    url(
+        r'^$', MigrateSubscriptionListView.as_view(), name='migration-list'),
 ]

@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+
+{% load humanize %}
+
+{% block title %}Gates Subscription Mapper{% endblock %}
+
+{% block header %}
+<a style="float: right" href="{% url 'logout' %}">Logout</a>
+{% endblock %}
+
+{% block content %}
+{% if migratesubscription_list %}
+    <div class="model-list">
+        <table>
+            <tr>
+                <th>Started</th>
+                <th>Ended</th>
+                <th>Source</th>
+                <th>Transform</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+            {% for migration in migratesubscription_list %}
+                <tr>
+                    <td>{{ migration.created_at | naturaltime }}</td>
+                    <td>{% if migration.completed_at %}{{ migration.completed_at | naturaltime }}{% else %}-{% endif %}</td>
+                    <td>{{ migration.column_name }} of {{ migration.table_name }}</td>
+                    {# TODO: Display name of messageset instead of ID #}
+                    <td>{{ migration.from_messageset }} to {{ migration.to_messageset }}</td>
+                    <td>{{ migration.get_status_display }} {{ migration.current }}/{% if migration.total %}{{ migration.total }}{% else %}-{% endif %}</td>
+                    <td>{# TODO: Add action buttons here #}</td>
+                </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% if is_paginated %}
+        <div class="pagination">
+            <span class="page-older">
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}">older</a>
+                {% endif %}
+            </span>
+            <span class="page-newer">
+                {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}">newer</a>
+                {% endif %}
+            </span>
+        </div>
+    {% endif %}
+{% endif %}
+{% endblock %}

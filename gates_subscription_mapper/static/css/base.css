@@ -5,7 +5,25 @@ body
     max-width: 650px;
 }
 
-#logout
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+table, th, td {
+    padding: 5px;
+    border: 1px solid black;
+}
+
+.model-list {
+    padding: 20px 0px;
+}
+
+.page-newer {
+    float: right;
+}
+
+.links
 {
     float: right;
 }
