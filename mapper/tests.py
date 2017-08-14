@@ -247,3 +247,83 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             '<select name="column_name" id="id_column_name">'
             '{}</select>'.format(columns),
             html=True)
+
+    @responses.activate
+    def test_form_column_in_table_validation(self):
+        """
+        If a the selected column is not inside the selected table, then an
+        error should be returned.
+        """
+        tables = {
+            'testtable1': ['column1', 'column2'],
+            'testtable2': ['column3'],
+        }
+        messagesets = {
+            1: 'test.messageset.1',
+            2: 'test.messageset.2',
+        }
+        mock_get_messagesets(
+            [{'id': k, 'short_name': v} for k, v in messagesets.items()])
+        with connections['identities'].cursor() as cursor:
+            # We first need to remove all existing tables. Django performs
+            # migrations on all dbs in tests, and we want a clean DB
+            cursor.execute("DROP SCHEMA public CASCADE")
+            cursor.execute("CREATE SCHEMA public")
+            # Create the tables that we want
+            for table, columns in tables.items():
+                columns = ','.join(('{} TEXT'.format(c) for c in columns))
+                cursor.execute("CREATE TABLE {}({})".format(table, columns))
+        self.client.force_login(User.objects.create_user('testuser'))
+
+        response = self.client.post(reverse('migration-list'), data={
+            'table_name': 'testtable1',
+            'column_name': tables['testtable2'][0],
+            'from_messageset': 1,
+            'to_messageset': 2,
+        })
+        self.assertContains(
+            response,
+            '<ul class="errorlist"><li>Column {} is not a column in {}'
+            '</li></ul>'.format(tables['testtable2'][0], 'testtable1'),
+            html=True)
+
+    @responses.activate
+    def test_form_correct_submission(self):
+        """
+        A correct submission should result in a redirect to the list view,
+        and an object creation.
+        """
+        tables = {
+            'testtable1': ['column1', 'column2'],
+            'testtable2': ['column3'],
+        }
+        messagesets = {
+            1: 'test.messageset.1',
+            2: 'test.messageset.2',
+        }
+        mock_get_messagesets(
+            [{'id': k, 'short_name': v} for k, v in messagesets.items()])
+        with connections['identities'].cursor() as cursor:
+            # We first need to remove all existing tables. Django performs
+            # migrations on all dbs in tests, and we want a clean DB
+            cursor.execute("DROP SCHEMA public CASCADE")
+            cursor.execute("CREATE SCHEMA public")
+            # Create the tables that we want
+            for table, columns in tables.items():
+                columns = ','.join(('{} TEXT'.format(c) for c in columns))
+                cursor.execute("CREATE TABLE {}({})".format(table, columns))
+        self.client.force_login(User.objects.create_user('testuser'))
+
+        response = self.client.post(reverse('migration-list'), data={
+            'table_name': 'testtable1',
+            'column_name': tables['testtable1'][0],
+            'from_messageset': 1,
+            'to_messageset': 2,
+        })
+        self.assertRedirects(response, reverse('migration-list'))
+
+        [migration] = MigrateSubscription.objects.all()
+        self.assertEqual(migration.table_name, 'testtable1')
+        self.assertEqual(migration.column_name, tables['testtable1'][0])
+        self.assertEqual(migration.from_messageset, 1)
+        self.assertEqual(migration.to_messageset, 2)
