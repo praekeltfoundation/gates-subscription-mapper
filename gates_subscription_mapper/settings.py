@@ -90,6 +90,12 @@ DATABASES = {
         default=os.environ.get(
             'DATABASE',
             'postgres://postgres:@localhost/gates_subscription_mapper')),
+    # This database is where we can find the UUIDs of the identities that we
+    # want to migrate
+    'identities': dj_database_url.config(
+        default=os.environ.get(
+            'IDENTITIES_DATABASE',
+            'postgres://postgres:@localhost/identities')),
 }
 
 
@@ -141,3 +147,9 @@ STATICFILES_DIRS = [
 RAVEN_CONFIG = {
     'dsn': os.environ.get('SENTRY_DSN', None)
 }
+
+# Stage based messaging config
+STAGE_BASED_MESSAGING_URL = os.environ.get(
+    'STAGE_BASED_MESSAGING_URL', 'http://localhost:8001/api/v1')
+STAGE_BASED_MESSAGING_TOKEN = os.environ.get(
+    'STAGE_BASED_MESSAGING_TOKEN', 'replace-me')

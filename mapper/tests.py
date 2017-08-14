@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
+from django.db import connections
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.humanize.templatetags.humanize import naturaltime
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+import responses
 
 from .models import MigrateSubscription
 
@@ -42,11 +45,25 @@ class TestBaseTemplate(TestCase):
             response, '<a href="{}">Admin</a>'.format(reverse('admin:index')))
 
 
+def mock_get_messagesets(messagesets):
+    responses.add(
+        responses.GET,
+        '{}/messageset/'.format(settings.STAGE_BASED_MESSAGING_URL),
+        json={
+            "count": len(messagesets),
+            "next": None,
+            "previous": None,
+            "results": messagesets,
+        })
+
+
 class MigrationSubscriptionsListViewTests(TestCase):
+    @responses.activate
     def test_login_required(self):
         """
         To view the list of migrations, you need to be logged in.
         """
+        mock_get_messagesets([])
         response = self.client.get(reverse('migration-list'))
         self.assertRedirects(
             response,
@@ -57,10 +74,17 @@ class MigrationSubscriptionsListViewTests(TestCase):
         response = self.client.get(reverse('migration-list'))
         self.assertEqual(response.status_code, 200)
 
+    @responses.activate
     def test_details_display(self):
         """
         Confirm that the correct details for the migrations are being displayed
         """
+        messagesets = {
+            1: 'test.messageset.1',
+            2: 'test.messageset.2',
+        }
+        mock_get_messagesets(
+            [{'id': k, 'short_name': v} for k, v in messagesets.items()])
         self.client.force_login(User.objects.create_user('testuser'))
         m = MigrateSubscription.objects.create(
             task_id='test-task-id',
@@ -87,17 +111,20 @@ class MigrationSubscriptionsListViewTests(TestCase):
             html=True)
         self.assertContains(
             response,
-            '<td>{} to {}</td>'.format(m.from_messageset, m.to_messageset),
+            '<td>{} to {}</td>'.format(
+                messagesets[m.from_messageset], messagesets[m.to_messageset]),
             html=True)
         self.assertContains(
             response, '<td>{} {}/{}</td>'.format(
                 m.get_status_display(), m.current, m.total),
             html=True)
 
+    @responses.activate
     def test_page_next_and_previous(self):
         """
         If there are next and previous pages, both links should be shown.
         """
+        mock_get_messagesets([])
         self.client.force_login(User.objects.create_user('testuser'))
 
         response = self.client.get(reverse('migration-list'))
@@ -127,3 +154,96 @@ class MigrationSubscriptionsListViewTests(TestCase):
             response, '<a href="?page=1">newer</a>', html=True)
         self.assertContains(
             response, '<a href="?page=3">older</a>', html=True)
+
+
+class CreateSubscriptionMigrationFormTests(TestCase):
+    multi_db = True
+
+    @responses.activate
+    def test_form_display_messageset(self):
+        """
+        Confirm that the correct details for the form messageset selections
+        are being displayed.
+        """
+        messagesets = {
+            1: 'test.messageset.1',
+            2: 'test.messageset.2',
+        }
+        mock_get_messagesets(
+            [{'id': k, 'short_name': v} for k, v in messagesets.items()])
+        self.client.force_login(User.objects.create_user('testuser'))
+
+        response = self.client.get(reverse('migration-list'))
+
+        messagesets = ''.join([
+            '<option value="{}">{}</option>'.format(k, v)
+            for k, v in messagesets.items()])
+        self.assertContains(
+            response,
+            '<select name="from_messageset" id="id_from_messageset">'
+            '{}</select>'.format(messagesets),
+            html=True)
+        self.assertContains(
+            response,
+            '<select name="to_messageset" id="id_to_messageset">'
+            '{}</select>'.format(messagesets),
+            html=True)
+
+    @responses.activate
+    def test_form_display_tables(self):
+        """
+        Confirm that the correct details for the form table selection is being
+        displayed.
+        """
+        tables = ('testtable1', 'testtable2')
+        mock_get_messagesets([])
+        with connections['identities'].cursor() as cursor:
+            # We first need to remove all existing tables. Django performs
+            # migrations on all dbs in tests, and we want a clean DB
+            cursor.execute("DROP SCHEMA public CASCADE")
+            cursor.execute("CREATE SCHEMA public")
+            # Create the tables that we want
+            for table in tables:
+                cursor.execute("CREATE TABLE {}()".format(table))
+        self.client.force_login(User.objects.create_user('testuser'))
+
+        response = self.client.get(reverse('migration-list'))
+        tables = ''.join([
+            '<option value="{0}">{0}</option>'.format(t) for t in tables])
+        self.assertContains(
+            response,
+            '<select name="table_name" id="id_table_name">'
+            '{}</select>'.format(tables),
+            html=True)
+
+    @responses.activate
+    def test_form_display_columns(self):
+        """
+        Confirm that the correct details for the form column selection is being
+        displayed.
+        """
+        tables = {
+            'testtable1': ['column1', 'column2'],
+            'testtable2': ['column3'],
+        }
+        mock_get_messagesets([])
+        with connections['identities'].cursor() as cursor:
+            # We first need to remove all existing tables. Django performs
+            # migrations on all dbs in tests, and we want a clean DB
+            cursor.execute("DROP SCHEMA public CASCADE")
+            cursor.execute("CREATE SCHEMA public")
+            # Create the tables that we want
+            for table, columns in tables.items():
+                columns = ','.join(('{} TEXT'.format(c) for c in columns))
+                cursor.execute("CREATE TABLE {}({})".format(table, columns))
+        self.client.force_login(User.objects.create_user('testuser'))
+
+        response = self.client.get(reverse('migration-list'))
+        columns = ''.join([
+            '<option value="{0}">{0}</option>'.format(c)
+            for c in sorted(sum(tables.values(), []))])
+        self.assertContains(
+            response,
+            '<select name="column_name" id="id_column_name">'
+            '{}</select>'.format(columns),
+            html=True)
