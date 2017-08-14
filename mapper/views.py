@@ -3,7 +3,10 @@ from __future__ import unicode_literals
 
 from django.db import connections
 from django.conf import settings
+from django.contrib.admin.models import LogEntry, ADDITION
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.contenttypes.models import ContentType
+from django.utils.encoding import force_text
 from django.urls import reverse_lazy
 from django.views.generic.edit import ModelFormMixin
 from django.views.generic.list import ListView
@@ -112,3 +115,19 @@ class MigrateSubscriptionListView(
             return self.form_valid(form)
         else:
             return self.form_invalid(form)
+
+    def form_valid(self, form):
+        """
+        Here we add the history of the user that created the object.
+        """
+        redirect = super(MigrateSubscriptionListView, self).form_valid(form)
+        LogEntry.objects.log_action(
+            user_id=self.request.user.pk,
+            content_type_id=ContentType.objects.get_for_model(
+                MigrateSubscription).pk,
+            object_id=self.object.pk,
+            object_repr=force_text(self.object),
+            action_flag=ADDITION,
+            change_message='Added.'
+        )
+        return redirect
