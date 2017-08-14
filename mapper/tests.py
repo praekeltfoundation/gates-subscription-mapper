@@ -9,6 +9,7 @@ from django.contrib.humanize.templatetags.humanize import naturaltime
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+import json
 import responses
 
 from .models import MigrateSubscription
@@ -335,4 +336,9 @@ class CreateSubscriptionMigrationFormTests(TestCase):
         [history] = LogEntry.objects.filter(object_id=migration.pk)
         self.assertEqual(history.user, user)
         self.assertEqual(history.action_flag, ADDITION)
-        self.assertEqual(history.change_message, "Added.")
+        self.assertEqual(json.loads(history.change_message), [{
+            'added': {
+                'object': str(migration),
+                'name': str(migration._meta.verbose_name),
+            }
+        }])

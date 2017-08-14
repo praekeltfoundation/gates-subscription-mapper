@@ -128,6 +128,14 @@ class MigrateSubscriptionListView(
             object_id=self.object.pk,
             object_repr=force_text(self.object),
             action_flag=ADDITION,
-            change_message='Added.'
+            # From django.contrib.admin.utils.construct_change_message
+            change_message=[
+                {
+                    'added': {
+                        'name': str(self.object._meta.verbose_name),
+                        'object': str(self.object)
+                    }
+                }
+            ]
         )
         return redirect
