@@ -153,3 +153,11 @@ STAGE_BASED_MESSAGING_URL = os.environ.get(
     'STAGE_BASED_MESSAGING_URL', 'http://localhost:8001/api/v1')
 STAGE_BASED_MESSAGING_TOKEN = os.environ.get(
     'STAGE_BASED_MESSAGING_TOKEN', 'replace-me')
+
+# Celery config
+CELERY_BROKER_URL = os.environ.get(
+    'CELERY_BROKER_URL', 'amqp://guest:guest@localhost:5672//')
+CELERY_WORKER_CONCURRENCY = int(os.environ.get(
+    'CELERY_WORKER_CONCURRENCY', '1'))
+CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.environ.get(
+    'CELERY_WORKER_PREFETCH_MULTIPLIER', '1'))

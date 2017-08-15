@@ -4,6 +4,7 @@ COPY . /app
 RUN pip install -e .
 
 ENV DJANGO_SETTINGS_MODULE "gates_subscription_mapper.settings"
+ENV CELERY_APP "gates_subscription_mapper"
 
 RUN python manage.py collectstatic --noinput
 
