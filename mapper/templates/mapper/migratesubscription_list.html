@@ -5,10 +5,6 @@
 
 {% block title %}Gates Subscription Mapper{% endblock %}
 
-{% block header %}
-<a style="float: right" href="{% url 'logout' %}">Logout</a>
-{% endblock %}
-
 {% block content %}
 <form method="post">
     {% csrf_token %}
@@ -33,19 +29,22 @@
                     <td>{{ migration.column_name }} of {{ migration.table_name }}</td>
                     <td>{{ messagesets|lookup:migration.from_messageset }} to {{ messagesets|lookup:migration.to_messageset }}</td>
                     <td>{{ migration.get_status_display }} {{ migration.current }}/{% if migration.total %}{{ migration.total }}{% else %}-{% endif %}</td>
-                    <td>{# TODO: Add action buttons here #}</td>
+                    <td>
+                        {# TODO: Add action buttons here #}
+                        <a href="{% url 'log-list' migration_id=migration.pk %}">Logs</a>
+                    </td>
                 </tr>
             {% endfor %}
         </table>
     </div>
     {% if is_paginated %}
         <div class="pagination">
-            <span class="page-older">
+            <span class="page-next">
                 {% if page_obj.has_next %}
                     <a href="?page={{ page_obj.next_page_number }}">older</a>
                 {% endif %}
             </span>
-            <span class="page-newer">
+            <span class="page-previous">
                 {% if page_obj.has_previous %}
                     <a href="?page={{ page_obj.previous_page_number }}">newer</a>
                 {% endif %}

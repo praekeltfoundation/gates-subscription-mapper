@@ -14,7 +14,7 @@ from seed_services_client.stage_based_messaging import (
     StageBasedMessagingApiClient)
 
 from .forms import MigrateSubscriptionForm
-from .models import MigrateSubscription
+from .models import LogEvent, MigrateSubscription
 
 
 class MigrateSubscriptionListView(
@@ -139,3 +139,14 @@ class MigrateSubscriptionListView(
             ]
         )
         return redirect
+
+
+class LogListView(LoginRequiredMixin, ListView):
+    model = LogEvent
+    paginate_by = 20
+
+    def get_queryset(self):
+        self.migrate_subscription = get_object_or_404(
+            MigrateSubscription, pk=self.kwargs['migration_id'])
+        return LogEvent.objects.filter(
+            migrate_subscription=self.migrate_subscription)
