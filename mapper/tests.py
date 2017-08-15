@@ -3,11 +3,13 @@ from __future__ import unicode_literals
 
 from django.db import connections
 from django.conf import settings
+from django.contrib.admin.models import LogEntry, ADDITION
 from django.contrib.auth.models import User
 from django.contrib.humanize.templatetags.humanize import naturaltime
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+import json
 import responses
 
 from .models import MigrateSubscription
@@ -312,7 +314,8 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             for table, columns in tables.items():
                 columns = ','.join(('{} TEXT'.format(c) for c in columns))
                 cursor.execute("CREATE TABLE {}({})".format(table, columns))
-        self.client.force_login(User.objects.create_user('testuser'))
+        user = User.objects.create_user('testuser')
+        self.client.force_login(user)
 
         response = self.client.post(reverse('migration-list'), data={
             'table_name': 'testtable1',
@@ -323,7 +326,19 @@ class CreateSubscriptionMigrationFormTests(TestCase):
         self.assertRedirects(response, reverse('migration-list'))
 
         [migration] = MigrateSubscription.objects.all()
+        # Test object is created correctly
         self.assertEqual(migration.table_name, 'testtable1')
         self.assertEqual(migration.column_name, tables['testtable1'][0])
         self.assertEqual(migration.from_messageset, 1)
         self.assertEqual(migration.to_messageset, 2)
+
+        # Test object history is created correctly
+        [history] = LogEntry.objects.filter(object_id=migration.pk)
+        self.assertEqual(history.user, user)
+        self.assertEqual(history.action_flag, ADDITION)
+        self.assertEqual(json.loads(history.change_message), [{
+            'added': {
+                'object': str(migration),
+                'name': str(migration._meta.verbose_name),
+            }
+        }])
