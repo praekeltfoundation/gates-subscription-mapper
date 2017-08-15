@@ -6,14 +6,14 @@ from django.conf import settings
 from django.contrib.admin.models import LogEntry, ADDITION
 from django.contrib.auth.models import User
 from django.contrib.humanize.templatetags.humanize import naturaltime
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 import json
 import responses
+import logging
 
-from .models import MigrateSubscription
-from .tasks import test_task
+from .models import LogEvent, MigrateSubscription
 
 
 class TestBaseTemplate(TestCase):
@@ -291,6 +291,7 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             html=True)
 
     @responses.activate
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
     def test_form_correct_submission(self):
         """
         A correct submission should result in a redirect to the list view,
@@ -345,9 +346,100 @@ class CreateSubscriptionMigrationFormTests(TestCase):
         }])
 
 
-class TestTaskTest(TestCase):
-    def test_test_task(self):
+class TestLogListView(TestCase):
+    def test_login_required(self):
         """
-        Ensures that the test task can run.
+        You need to be logged in to be able to view the list of logs.
         """
-        test_task.delay()
+        migrate1 = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        url = reverse('log-list', kwargs={'migration_id': migrate1.pk})
+        response = self.client.get(url)
+        self.assertRedirects(
+            response,
+            '{}?next={}'.format(reverse('login'), url)
+        )
+
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_view_list_filtered(self):
+        """
+        Test that only the logs for the selected subscription migration are
+        shown.
+        """
+        migrate1 = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        migrate2 = MigrateSubscription.objects.create(
+            from_messageset=3, to_messageset=3,
+            table_name='table2', column_name='column2',
+        )
+        log1 = LogEvent.objects.create(
+            migrate_subscription=migrate1, log_level=logging.INFO,
+            message="Test log 1")
+        log2 = LogEvent.objects.create(
+            migrate_subscription=migrate2, log_level=logging.INFO,
+            message="Test log 2")
+
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.get(reverse(
+            'log-list', kwargs={'migration_id': migrate1.pk}))
+
+        self.assertContains(response, log1.message)
+        self.assertNotContains(response, log2.message)
+
+    def test_log_display(self):
+        """
+        Test that the correct information for the logs are shown.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        log = LogEvent.objects.create(
+            migrate_subscription=migrate, log_level=logging.INFO,
+            message="Test log 1")
+
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.get(reverse(
+            'log-list', kwargs={'migration_id': migrate.pk}))
+
+        self.assertContains(response, log.get_log_level_display())
+        self.assertContains(response, log.message)
+        self.assertContains(response, naturaltime(log.created_at))
+
+    def test_page_next_and_previous(self):
+        """
+        If there are next and previous pages, both links should be shown.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        self.client.force_login(User.objects.create_user('testuser'))
+        url = reverse('log-list', kwargs={'migration_id': migrate.pk})
+        response = self.client.get(reverse(
+            'log-list', kwargs={'migration_id': migrate.pk}))
+
+        self.assertNotContains(
+            response, '<a href="?page=0">older</a>', html=True)
+        self.assertNotContains(
+            response, '<a href="?page=2">newer</a>', html=True)
+
+        # Create 3 pages
+        for i in range(3 * 20):
+            LogEvent.objects.create(
+                migrate_subscription=migrate, log_level=logging.INFO,
+                message="Test log {}".format(i))
+
+        response = self.client.get('{}?page=2'.format(url))
+
+        self.assertContains(
+            response, '<a href="?page=1">older</a>', html=True)
+        self.assertContains(
+            response, '<a href="?page=3">newer</a>', html=True)
