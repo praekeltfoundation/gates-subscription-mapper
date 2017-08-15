@@ -13,6 +13,7 @@ import json
 import responses
 
 from .models import MigrateSubscription
+from .tasks import test_task
 
 
 class TestBaseTemplate(TestCase):
@@ -342,3 +343,11 @@ class CreateSubscriptionMigrationFormTests(TestCase):
                 'name': str(migration._meta.verbose_name),
             }
         }])
+
+
+class TestTaskTest(TestCase):
+    def test_test_task(self):
+        """
+        Ensures that the test task can run.
+        """
+        test_task.delay()
