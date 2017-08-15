@@ -6,4 +6,5 @@ class TestTask(Task):
     def run(self, **kwargs):
         return "Successful"
 
+
 test_task = TestTask()
