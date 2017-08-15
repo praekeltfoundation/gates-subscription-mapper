@@ -42,6 +42,7 @@ setup(
         'psycopg2==2.7.3',
         'seed-services-client==0.26.0',
         'responses==0.7.0',
+        'celery==4.1.0',
     ],
     classifiers=[
         'Development Status :: 4 - Beta',
