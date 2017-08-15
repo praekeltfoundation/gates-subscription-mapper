@@ -3,6 +3,7 @@ from __future__ import unicode_literals
 
 from django.db import models
 from django.utils.encoding import python_2_unicode_compatible
+import logging
 
 
 @python_2_unicode_compatible
@@ -58,3 +59,33 @@ class MigrateSubscription(models.Model):
                 table=self.table_name, from_ms=self.from_messageset,
                 to_ms=self.to_messageset, task=self.task_id)
         )
+
+
+@python_2_unicode_compatible
+class LogEvent(models.Model):
+    LOG_LEVEL_CHOICES = (
+        (logging.CRITICAL, 'Critical'),
+        (logging.ERROR, 'Error'),
+        (logging.WARNING, 'Warning'),
+        (logging.INFO, 'Info'),
+        (logging.DEBUG, 'Debug'),
+        (logging.NOTSET, 'Not Set'),
+    )
+
+    migrate_subscription = models.ForeignKey(
+        MigrateSubscription, on_delete=models.CASCADE, related_name='logs')
+    log_level = models.IntegerField(
+        "Log Level", choices=LOG_LEVEL_CHOICES, default=logging.INFO)
+    message = models.TextField("Log Message")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['migrate_subscription', 'created_at'])
+        ]
+
+    def __str__(self):
+        return "{created_at} [{level}]: {message}".format(
+            created_at=self.created_at, level=self.get_log_level_display(),
+            message=self.message)
