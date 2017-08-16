@@ -9,11 +9,17 @@ from django.contrib.humanize.templatetags.humanize import naturaltime
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from testfixtures import LogCapture
 import json
 import responses
 import logging
+try:
+    import mock
+except ImportError:
+    import unittest.mock as mock
 
 from .models import LogEvent, MigrateSubscription
+from .tasks import migrate_subscriptions
 
 
 class TestBaseTemplate(TestCase):
@@ -443,3 +449,106 @@ class TestLogListView(TestCase):
             response, '<a href="?page=1">older</a>', html=True)
         self.assertContains(
             response, '<a href="?page=3">newer</a>', html=True)
+
+
+class MigrateSubscriptionsTaskTest(TestCase):
+    multi_db = True
+
+    def test_log(self):
+        """
+        The logging function should create a new LogEvent object, as well as
+        log the message normally.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        with LogCapture() as l:
+            migrate_subscriptions.log(migrate, logging.INFO, 'Test log')
+
+        l.check(
+            ('mapper.tasks', 'INFO', 'Test log')
+        )
+        [log] = LogEvent.objects.all()
+        self.assertEqual(log.message, 'Test log')
+        self.assertEqual(log.log_level, logging.INFO)
+        self.assertEqual(log.migrate_subscription, migrate)
+
+    def test_count_identities(self):
+        """
+        The count_identities function should return the number of identities
+        that we want to migrate.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+
+        with connections['identities'].cursor() as cursor:
+            # Create the table that we want
+            cursor.execute("CREATE TABLE table1 (column1 TEXT)")
+            # Create the rows that we want
+            for i in range(25):
+                cursor.execute("INSERT INTO table1 VALUES (%s)", [str(i)])
+
+        self.assertEqual(migrate_subscriptions.count_identities(migrate), 25)
+
+    def test_fetch_identities(self):
+        """
+        The fetch_identities function should return all the values of the
+        specified field in the specified table.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        with connections['identities'].cursor() as cursor:
+            # Create the table that we want
+            cursor.execute("CREATE TABLE table1 (column1 TEXT)")
+            # Create the rows that we want
+            for i in range(20):
+                cursor.execute("INSERT INTO table1 VALUES (%s)", [str(i)])
+
+        migrate_subscriptions.CHUNK_SIZE = 10
+        # Queries:
+        # 1. Start transaction/savepoint
+        # 2. Create cursor
+        # 3. Fetch first batch
+        # 4. Fetch second batch
+        # 5. Fetch third (empty) batch
+        # 6. End transaction/savepoint
+        with self.assertNumQueries(6, using='identities'):
+            identities = sorted(
+                migrate_subscriptions.fetch_identities(migrate))
+        self.assertEqual(identities, sorted([str(i) for i in range(20)]))
+
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.migrate_identity')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.fetch_identities')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run(self, count_identities, fetch_identities, migrate_identity):
+        """
+        Running the task should call the various functions with correct
+        parameters.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+
+        count_identities.return_value = 2
+        fetch_identities.return_value = ['identity1', 'identity2']
+
+        migrate_subscriptions.delay(migrate.pk)
+
+        count_identities.assert_called_once_with(migrate)
+        fetch_identities.assert_called_once_with(migrate)
+        self.assertEqual(migrate_identity.call_count, 2)
+        migrate_identity.assert_any_call(migrate, 'identity1')
+        migrate_identity.assert_any_call(migrate, 'identity2')
+
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.COMPLETE)
+        self.assertNotEqual(migrate.task_id, None)
+        self.assertNotEqual(migrate.completed_at, None)
+        self.assertEqual(migrate.total, 2)
+        self.assertEqual(migrate.current, 2)
