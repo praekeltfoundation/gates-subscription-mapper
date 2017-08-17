@@ -47,9 +47,6 @@ class MigrateSubscription(models.Model):
             models.Index(fields=['-created_at']),
         ]
 
-    def clean_task_id(self):
-        return self.cleaned_data['task_id'] or None
-
     def __str__(self):
         return (
             "{status} migrate {column} on {table} from message set {from_ms} "
