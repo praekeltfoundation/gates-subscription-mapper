@@ -556,6 +556,54 @@ class MigrateSubscriptionsTaskTest(TestCase):
         self.assertEqual(migrate.total, 2)
         self.assertEqual(migrate.current, 2)
 
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.log')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run_failure_args(self, count_identities, log):
+        """
+        If the task raises an exception, and the migrateion object was provided
+        in the args, it should create a log object for it and log it.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+
+        def error_effect(migrate):
+            raise Exception('Test error')
+        count_identities.side_effect = error_effect
+
+        migrate_subscriptions.delay(migrate.pk)
+
+        log_args = log.call_args[0]
+        self.assertEqual(log_args[0], migrate)
+        self.assertEqual(log_args[1], logging.ERROR)
+        self.assertTrue('Exception' in log_args[2])
+        self.assertTrue('Test error' in log_args[2])
+
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.log')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run_failure_kwargs(self, count_identities, log):
+        """
+        If the task raises an exception, and the migrateion object was provided
+        in the kwargs, it should create a log object for it and log it.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+
+        def error_effect(migrate):
+            raise Exception('Test error')
+        count_identities.side_effect = error_effect
+
+        migrate_subscriptions.delay(migrate_subscription_id=migrate.pk)
+
+        log_args = log.call_args[0]
+        self.assertEqual(log_args[0], migrate)
+        self.assertEqual(log_args[1], logging.ERROR)
+        self.assertTrue('Exception' in log_args[2])
+        self.assertTrue('Test error' in log_args[2])
+
 
 class LogEventModelTests(TestCase):
     def test_log_event_display(self):

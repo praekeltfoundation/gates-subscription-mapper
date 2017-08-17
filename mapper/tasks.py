@@ -112,8 +112,8 @@ class MigrateSubscriptionsTask(Task):
         self.log(
             migrate, ERROR, "[{class_name}]: {message}.\n{traceback}".format(
                 class_name=exc.__class__.__name__,
-                message=exc.strip(),
-                traceback=einfo.strip()
+                message=str(exc).strip(),
+                traceback=str(einfo).strip(),
             ))
 
         migrate.status = MigrateSubscription.ERROR
