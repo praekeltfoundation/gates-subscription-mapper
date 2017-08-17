@@ -164,6 +164,29 @@ class MigrationSubscriptionsListViewTests(TestCase):
         self.assertContains(
             response, '<a href="?page=3">older</a>', html=True)
 
+    @responses.activate
+    def test_retry_button(self):
+        """
+        If a listed migration is in the error state, then there should be
+        a retry button.
+        """
+        m = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='test-table', column_name='test-column',
+        )
+        mock_get_messagesets([])
+        self.client.force_login(User.objects.create_user('testuser'))
+
+        response = self.client.get(reverse('migration-list'))
+        self.assertNotContains(
+            response, '<button type="submit">Retry</button>', html=True)
+
+        m.status = MigrateSubscription.ERROR
+        m.save()
+        response = self.client.get(reverse('migration-list'))
+        self.assertContains(
+            response, '<button type="submit">Retry</button>', html=True)
+
 
 class CreateSubscriptionMigrationFormTests(TestCase):
     multi_db = True
