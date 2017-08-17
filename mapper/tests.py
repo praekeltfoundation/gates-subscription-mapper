@@ -298,10 +298,11 @@ class CreateSubscriptionMigrationFormTests(TestCase):
 
     @responses.activate
     @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
-    def test_form_correct_submission(self):
+    @mock.patch.object(migrate_subscriptions, 'delay')
+    def test_form_correct_submission(self, migrate_subscriptions):
         """
         A correct submission should result in a redirect to the list view,
-        and an object creation.
+        a MigrationSubscription creation, and run the relevant celery task.
         """
         tables = {
             'testtable1': ['column1', 'column2'],
@@ -350,6 +351,8 @@ class CreateSubscriptionMigrationFormTests(TestCase):
                 'name': str(migration._meta.verbose_name),
             }
         }])
+
+        migrate_subscriptions.assert_called_once_with(migration.pk)
 
 
 class TestLogListView(TestCase):
