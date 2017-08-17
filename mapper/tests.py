@@ -546,7 +546,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         with self.assertNumQueries(6, using='identities'):
             identities = sorted(
                 migrate_subscriptions.fetch_identities(migrate))
-        self.assertEqual(identities, range(20))
+        self.assertEqual(identities, list(range(20)))
 
     def test_fetch_identities_with_offset(self):
         """
@@ -567,7 +567,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
 
         identities = sorted(
             migrate_subscriptions.fetch_identities(migrate))
-        self.assertEqual(identities, range(10, 20))
+        self.assertEqual(identities, list(range(10, 20)))
 
     @mock.patch('mapper.tasks.MigrateSubscriptionsTask.migrate_identity')
     @mock.patch('mapper.tasks.MigrateSubscriptionsTask.fetch_identities')
