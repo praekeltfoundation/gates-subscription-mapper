@@ -560,7 +560,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
     @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
     def test_run_failure_args(self, count_identities, log):
         """
-        If the task raises an exception, and the migrateion object was provided
+        If the task raises an exception, and the migration object was provided
         in the args, it should create a log object for it and log it.
         """
         migrate = MigrateSubscription.objects.create(
@@ -584,7 +584,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
     @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
     def test_run_failure_kwargs(self, count_identities, log):
         """
-        If the task raises an exception, and the migrateion object was provided
+        If the task raises an exception, and the migration object was provided
         in the kwargs, it should create a log object for it and log it.
         """
         migrate = MigrateSubscription.objects.create(
