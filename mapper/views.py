@@ -3,16 +3,19 @@ from __future__ import unicode_literals
 
 from django.db import connections
 from django.conf import settings
-from django.contrib.admin.models import LogEntry, ADDITION
+from django.contrib.admin.models import LogEntry, ADDITION, CHANGE
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.contenttypes.models import ContentType
-from django.shortcuts import get_object_or_404
+from django.http import HttpResponseBadRequest
+from django.shortcuts import get_object_or_404, redirect
 from django.utils.encoding import force_text
 from django.urls import reverse_lazy
+from django.views.generic import View
 from django.views.generic.edit import ModelFormMixin
 from django.views.generic.list import ListView
 from seed_services_client.stage_based_messaging import (
     StageBasedMessagingApiClient)
+import logging
 
 from .forms import MigrateSubscriptionForm
 from .models import LogEvent, MigrateSubscription
@@ -143,6 +146,42 @@ class MigrateSubscriptionListView(
         )
         migrate_subscriptions.delay(self.object.pk)
         return redirect
+
+
+class RetrySubscriptionView(LoginRequiredMixin, View):
+    """
+    If a task has errored, we want to be able to resume it.
+    """
+    def post(self, request, *args, **kwargs):
+        migrate = get_object_or_404(
+            MigrateSubscription, pk=self.kwargs['migration_id'])
+        if migrate.status != MigrateSubscription.ERROR:
+            return HttpResponseBadRequest(
+                "Subscription Migration must be in error state to be retried.")
+
+        migrate.status = MigrateSubscription.STARTING
+        migrate.save(update_fields=('status',))
+
+        # Add to history who retried the task
+        LogEntry.objects.log_action(
+            user_id=request.user.pk,
+            content_type_id=ContentType.objects.get_for_model(
+                MigrateSubscription).pk,
+            object_id=migrate.pk,
+            object_repr=force_text(migrate),
+            action_flag=CHANGE,
+            change_message="Retried task",
+        )
+
+        # Add to the log that the task was retried
+        LogEvent.objects.create(
+            migrate_subscription=migrate,
+            log_level=logging.INFO,
+            message="Retrying task",
+        )
+
+        migrate_subscriptions.delay(migrate.pk)
+        return redirect('migration-list')
 
 
 class LogListView(LoginRequiredMixin, ListView):

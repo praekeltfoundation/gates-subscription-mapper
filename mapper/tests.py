@@ -3,7 +3,7 @@ from __future__ import unicode_literals
 
 from django.db import connections
 from django.conf import settings
-from django.contrib.admin.models import LogEntry, ADDITION
+from django.contrib.admin.models import LogEntry, ADDITION, CHANGE
 from django.contrib.auth.models import User
 from django.contrib.humanize.templatetags.humanize import naturaltime
 from django.test import TestCase, override_settings
@@ -645,3 +645,79 @@ class LogEventModelTests(TestCase):
             migrate_subscription=migrate, log_level=logging.INFO,
             message='Test log')
         self.assertEqual(str(l), '{} [Info]: Test log'.format(l.created_at))
+
+
+class TestRetrySubscriptionMigrate(TestCase):
+    def test_login_required(self):
+        """
+        You must be logged in to be able to use this endpoint.
+        """
+        url = reverse('migration-retry', kwargs={'migration_id': 1})
+        response = self.client.post(url)
+        self.assertRedirects(
+            response,
+            '{}?next={}'.format(reverse('login'), url)
+        )
+
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_missing_migration(self):
+        """
+        If the migration specified by the id doesn't exist, a 404 should be
+        returned.
+        """
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.post(
+            reverse('migration-retry', kwargs={'migration_id': 1}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_non_error_migration(self):
+        """
+        If a migration is not in error status, then we cannot retry it, so
+        a bad request error should be returned.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.post(
+            reverse('migration-retry', kwargs={'migration_id': migrate.pk}))
+        self.assertEqual(response.status_code, 400)
+
+    @mock.patch('mapper.tasks.migrate_subscriptions.delay')
+    @responses.activate
+    def test_successful_retry(self, migrate_subscriptions):
+        """
+        On a valid request, the migration status should be set to starting,
+        the retry action should be logged on the history, a new log object
+        should be created, and the celery task should be started.
+        """
+        mock_get_messagesets([])
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+            status=MigrateSubscription.ERROR,
+        )
+        user = User.objects.create_user('testuser')
+        self.client.force_login(user)
+        response = self.client.post(
+            reverse('migration-retry', kwargs={'migration_id': migrate.pk}))
+        self.assertRedirects(response, reverse('migration-list'))
+
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.STARTING)
+
+        history = LogEntry.objects.last()
+        self.assertEqual(history.user, user)
+        self.assertEqual(history.action_flag, CHANGE)
+        self.assertEqual(history.change_message, "Retried task")
+
+        log = LogEvent.objects.last()
+        self.assertEqual(log.migrate_subscription, migrate)
+        self.assertEqual(log.log_level, logging.INFO)
+        self.assertEqual(log.message, "Retrying task")
+
+        migrate_subscriptions.assert_called_once_with(migrate.pk)
