@@ -561,7 +561,8 @@ class MigrateSubscriptionsTaskTest(TestCase):
     def test_run_failure_args(self, count_identities, log):
         """
         If the task raises an exception, and the migration object was provided
-        in the args, it should create a log object for it and log it.
+        in the args, it should create a log object for it and log it, and set
+        the status to error.
         """
         migrate = MigrateSubscription.objects.create(
             from_messageset=1, to_messageset=2,
@@ -579,13 +580,16 @@ class MigrateSubscriptionsTaskTest(TestCase):
         self.assertEqual(log_args[1], logging.ERROR)
         self.assertTrue('Exception' in log_args[2])
         self.assertTrue('Test error' in log_args[2])
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.ERROR)
 
     @mock.patch('mapper.tasks.MigrateSubscriptionsTask.log')
     @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
     def test_run_failure_kwargs(self, count_identities, log):
         """
         If the task raises an exception, and the migration object was provided
-        in the kwargs, it should create a log object for it and log it.
+        in the kwargs, it should create a log object for it and log it, and set
+        the status to error.
         """
         migrate = MigrateSubscription.objects.create(
             from_messageset=1, to_messageset=2,
@@ -603,6 +607,8 @@ class MigrateSubscriptionsTaskTest(TestCase):
         self.assertEqual(log_args[1], logging.ERROR)
         self.assertTrue('Exception' in log_args[2])
         self.assertTrue('Test error' in log_args[2])
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.ERROR)
 
 
 class LogEventModelTests(TestCase):
