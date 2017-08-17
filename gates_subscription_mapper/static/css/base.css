@@ -2,7 +2,7 @@ body
 {
     font-family: sans-serif;
     margin: 40px auto;
-    max-width: 650px;
+    max-width: 800px;
 }
 
 table {
@@ -19,7 +19,7 @@ table, th, td {
     padding: 20px 0px;
 }
 
-.page-newer {
+.page-next {
     float: right;
 }
 

@@ -6,14 +6,20 @@ from django.conf import settings
 from django.contrib.admin.models import LogEntry, ADDITION
 from django.contrib.auth.models import User
 from django.contrib.humanize.templatetags.humanize import naturaltime
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from testfixtures import LogCapture
 import json
 import responses
+import logging
+try:
+    import mock
+except ImportError:
+    import unittest.mock as mock
 
-from .models import MigrateSubscription
-from .tasks import test_task
+from .models import LogEvent, MigrateSubscription
+from .tasks import migrate_subscriptions
 
 
 class TestBaseTemplate(TestCase):
@@ -291,10 +297,12 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             html=True)
 
     @responses.activate
-    def test_form_correct_submission(self):
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
+    @mock.patch.object(migrate_subscriptions, 'delay')
+    def test_form_correct_submission(self, migrate_subscriptions):
         """
         A correct submission should result in a redirect to the list view,
-        and an object creation.
+        a MigrationSubscription creation, and run the relevant celery task.
         """
         tables = {
             'testtable1': ['column1', 'column2'],
@@ -344,10 +352,275 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             }
         }])
 
+        migrate_subscriptions.assert_called_once_with(migration.pk)
 
-class TestTaskTest(TestCase):
-    def test_test_task(self):
+
+class TestLogListView(TestCase):
+    def test_login_required(self):
         """
-        Ensures that the test task can run.
+        You need to be logged in to be able to view the list of logs.
         """
-        test_task.delay()
+        migrate1 = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        url = reverse('log-list', kwargs={'migration_id': migrate1.pk})
+        response = self.client.get(url)
+        self.assertRedirects(
+            response,
+            '{}?next={}'.format(reverse('login'), url)
+        )
+
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_view_list_filtered(self):
+        """
+        Test that only the logs for the selected subscription migration are
+        shown.
+        """
+        migrate1 = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        migrate2 = MigrateSubscription.objects.create(
+            from_messageset=3, to_messageset=3,
+            table_name='table2', column_name='column2',
+        )
+        log1 = LogEvent.objects.create(
+            migrate_subscription=migrate1, log_level=logging.INFO,
+            message="Test log 1")
+        log2 = LogEvent.objects.create(
+            migrate_subscription=migrate2, log_level=logging.INFO,
+            message="Test log 2")
+
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.get(reverse(
+            'log-list', kwargs={'migration_id': migrate1.pk}))
+
+        self.assertContains(response, log1.message)
+        self.assertNotContains(response, log2.message)
+
+    def test_log_display(self):
+        """
+        Test that the correct information for the logs are shown.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        log = LogEvent.objects.create(
+            migrate_subscription=migrate, log_level=logging.INFO,
+            message="Test log 1")
+
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.get(reverse(
+            'log-list', kwargs={'migration_id': migrate.pk}))
+
+        self.assertContains(response, log.get_log_level_display())
+        self.assertContains(response, log.message)
+        self.assertContains(response, naturaltime(log.created_at))
+
+    def test_page_next_and_previous(self):
+        """
+        If there are next and previous pages, both links should be shown.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        self.client.force_login(User.objects.create_user('testuser'))
+        url = reverse('log-list', kwargs={'migration_id': migrate.pk})
+        response = self.client.get(reverse(
+            'log-list', kwargs={'migration_id': migrate.pk}))
+
+        self.assertNotContains(
+            response, '<a href="?page=0">older</a>', html=True)
+        self.assertNotContains(
+            response, '<a href="?page=2">newer</a>', html=True)
+
+        # Create 3 pages
+        for i in range(3 * 20):
+            LogEvent.objects.create(
+                migrate_subscription=migrate, log_level=logging.INFO,
+                message="Test log {}".format(i))
+
+        response = self.client.get('{}?page=2'.format(url))
+
+        self.assertContains(
+            response, '<a href="?page=1">older</a>', html=True)
+        self.assertContains(
+            response, '<a href="?page=3">newer</a>', html=True)
+
+
+class MigrateSubscriptionsTaskTest(TestCase):
+    multi_db = True
+
+    def test_log(self):
+        """
+        The logging function should create a new LogEvent object, as well as
+        log the message normally.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        with LogCapture() as l:
+            migrate_subscriptions.log(migrate, logging.INFO, 'Test log')
+
+        l.check(
+            ('mapper.tasks', 'INFO', 'Test log')
+        )
+        [log] = LogEvent.objects.all()
+        self.assertEqual(log.message, 'Test log')
+        self.assertEqual(log.log_level, logging.INFO)
+        self.assertEqual(log.migrate_subscription, migrate)
+
+    def test_count_identities(self):
+        """
+        The count_identities function should return the number of identities
+        that we want to migrate.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+
+        with connections['identities'].cursor() as cursor:
+            # Create the table that we want
+            cursor.execute("CREATE TABLE table1 (column1 TEXT)")
+            # Create the rows that we want
+            for i in range(25):
+                cursor.execute("INSERT INTO table1 VALUES (%s)", [str(i)])
+
+        self.assertEqual(migrate_subscriptions.count_identities(migrate), 25)
+
+    def test_fetch_identities(self):
+        """
+        The fetch_identities function should return all the values of the
+        specified field in the specified table.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        with connections['identities'].cursor() as cursor:
+            # Create the table that we want
+            cursor.execute("CREATE TABLE table1 (column1 TEXT)")
+            # Create the rows that we want
+            for i in range(20):
+                cursor.execute("INSERT INTO table1 VALUES (%s)", [str(i)])
+
+        migrate_subscriptions.CHUNK_SIZE = 10
+        # Queries:
+        # 1. Start transaction/savepoint
+        # 2. Create cursor
+        # 3. Fetch first batch
+        # 4. Fetch second batch
+        # 5. Fetch third (empty) batch
+        # 6. End transaction/savepoint
+        with self.assertNumQueries(6, using='identities'):
+            identities = sorted(
+                migrate_subscriptions.fetch_identities(migrate))
+        self.assertEqual(identities, sorted([str(i) for i in range(20)]))
+
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.migrate_identity')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.fetch_identities')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run(self, count_identities, fetch_identities, migrate_identity):
+        """
+        Running the task should call the various functions with correct
+        parameters.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+
+        count_identities.return_value = 2
+        fetch_identities.return_value = ['identity1', 'identity2']
+
+        migrate_subscriptions.delay(migrate.pk)
+
+        count_identities.assert_called_once_with(migrate)
+        fetch_identities.assert_called_once_with(migrate)
+        self.assertEqual(migrate_identity.call_count, 2)
+        migrate_identity.assert_any_call(migrate, 'identity1')
+        migrate_identity.assert_any_call(migrate, 'identity2')
+
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.COMPLETE)
+        self.assertNotEqual(migrate.task_id, None)
+        self.assertNotEqual(migrate.completed_at, None)
+        self.assertEqual(migrate.total, 2)
+        self.assertEqual(migrate.current, 2)
+
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.log')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run_failure_args(self, count_identities, log):
+        """
+        If the task raises an exception, and the migration object was provided
+        in the args, it should create a log object for it and log it, and set
+        the status to error.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+
+        def error_effect(migrate):
+            raise Exception('Test error')
+        count_identities.side_effect = error_effect
+
+        migrate_subscriptions.delay(migrate.pk)
+
+        log_args = log.call_args[0]
+        self.assertEqual(log_args[0], migrate)
+        self.assertEqual(log_args[1], logging.ERROR)
+        self.assertTrue('Exception' in log_args[2])
+        self.assertTrue('Test error' in log_args[2])
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.ERROR)
+
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.log')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run_failure_kwargs(self, count_identities, log):
+        """
+        If the task raises an exception, and the migration object was provided
+        in the kwargs, it should create a log object for it and log it, and set
+        the status to error.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+
+        def error_effect(migrate):
+            raise Exception('Test error')
+        count_identities.side_effect = error_effect
+
+        migrate_subscriptions.delay(migrate_subscription_id=migrate.pk)
+
+        log_args = log.call_args[0]
+        self.assertEqual(log_args[0], migrate)
+        self.assertEqual(log_args[1], logging.ERROR)
+        self.assertTrue('Exception' in log_args[2])
+        self.assertTrue('Test error' in log_args[2])
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.ERROR)
+
+
+class LogEventModelTests(TestCase):
+    def test_log_event_display(self):
+        """
+        Test that the string value of a log event is generate correctly.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+        )
+        l = LogEvent.objects.create(
+            migrate_subscription=migrate, log_level=logging.INFO,
+            message='Test log')
+        self.assertEqual(str(l), '{} [Info]: Test log'.format(l.created_at))
