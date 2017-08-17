@@ -36,8 +36,10 @@ class MigrateSubscriptionsTask(Task):
         Returns a string which represents the SQL query to fetch all of the
         identities.
         """
-        return 'SELECT {column} FROM {table}'.format(
-            column=migrate.column_name, table=migrate.table_name)
+        return 'SELECT {column} FROM {table} ORDER BY {column} OFFSET {count}'\
+            .format(
+                column=migrate.column_name, table=migrate.table_name,
+                count=migrate.current)
 
     def fetch_identities(self, migrate):
         """

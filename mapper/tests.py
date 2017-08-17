@@ -507,10 +507,10 @@ class MigrateSubscriptionsTaskTest(TestCase):
         )
         with connections['identities'].cursor() as cursor:
             # Create the table that we want
-            cursor.execute("CREATE TABLE table1 (column1 TEXT)")
+            cursor.execute("CREATE TABLE table1 (column1 INTEGER)")
             # Create the rows that we want
             for i in range(20):
-                cursor.execute("INSERT INTO table1 VALUES (%s)", [str(i)])
+                cursor.execute("INSERT INTO table1 VALUES (%s)", [i])
 
         migrate_subscriptions.CHUNK_SIZE = 10
         # Queries:
@@ -523,7 +523,28 @@ class MigrateSubscriptionsTaskTest(TestCase):
         with self.assertNumQueries(6, using='identities'):
             identities = sorted(
                 migrate_subscriptions.fetch_identities(migrate))
-        self.assertEqual(identities, sorted([str(i) for i in range(20)]))
+        self.assertEqual(identities, range(20))
+
+    def test_fetch_identities_with_offset(self):
+        """
+        When we are resuming processing of identities, we want to resume from
+        where we left off. If `current` is not 0, we should only return
+        the identities that haven't yet been processed
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1', current=10,
+        )
+        with connections['identities'].cursor() as cursor:
+            # Create the table that we want
+            cursor.execute("CREATE TABLE table1 (column1 INTEGER)")
+            # Create the rows that we want
+            for i in range(20):
+                cursor.execute("INSERT INTO table1 VALUES (%s)", [i])
+
+        identities = sorted(
+            migrate_subscriptions.fetch_identities(migrate))
+        self.assertEqual(identities, range(10, 20))
 
     @mock.patch('mapper.tasks.MigrateSubscriptionsTask.migrate_identity')
     @mock.patch('mapper.tasks.MigrateSubscriptionsTask.fetch_identities')
