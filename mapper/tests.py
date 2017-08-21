@@ -915,7 +915,7 @@ class TestCancelSubscriptionMigrate(TestCase):
         self.assertEqual(response.status_code, 400)
 
     @responses.activate
-    def test_successful_retry(self):
+    def test_successful_cancel(self):
         """
         On a valid request, the migration status should be set to cancelled,
         the cancel action should be logged on the history, and a new log object
