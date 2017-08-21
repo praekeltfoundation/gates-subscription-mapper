@@ -31,6 +31,12 @@
                     <td>{{ migration.get_status_display }} {{ migration.current }}/{% if migration.total %}{{ migration.total }}{% else %}-{% endif %}</td>
                     <td>
                         {# TODO: Add action buttons here #}
+                        {% if migration.status == 'E' %}
+                        <form action="{% url 'migration-retry' migration_id=migration.pk %}" method="post">
+                            {% csrf_token %}
+                            <button type="submit">Retry</button>
+                        </form>
+                        {% endif %}
                         <a href="{% url 'log-list' migration_id=migration.pk %}">Logs</a>
                     </td>
                 </tr>
