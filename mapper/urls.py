@@ -1,7 +1,8 @@
 from django.conf.urls import url
 
 from .views import (
-    LogListView, MigrateSubscriptionListView, RetrySubscriptionView)
+    LogListView, MigrateSubscriptionListView, RetrySubscriptionView,
+    CancelSubscriptionView)
 
 urlpatterns = [
     url(
@@ -12,4 +13,7 @@ urlpatterns = [
     url(
         r'^migrations/(?P<migration_id>\d+)/retry/$',
         RetrySubscriptionView.as_view(), name='migration-retry'),
+    url(
+        r'^migrations/(?P<migration_id>\d+)/cancel/$',
+        CancelSubscriptionView.as_view(), name='migration-cancel')
 ]

@@ -836,3 +836,77 @@ class TestRetrySubscriptionMigrate(TestCase):
         self.assertEqual(log.message, "Retrying task")
 
         migrate_subscriptions.assert_called_once_with(migrate.pk)
+
+
+class TestCancelSubscriptionMigrate(TestCase):
+    def test_login_required(self):
+        """
+        You must be logged in to be able to use this endpoint.
+        """
+        url = reverse('migration-cancel', kwargs={'migration_id': 1})
+        response = self.client.post(url)
+        self.assertRedirects(
+            response,
+            '{}?next={}'.format(reverse('login'), url)
+        )
+
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_missing_migration(self):
+        """
+        If the migration specified by the id doesn't exist, a 404 should be
+        returned.
+        """
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.post(
+            reverse('migration-cancel', kwargs={'migration_id': 1}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_non_running_migration(self):
+        """
+        If a migration is not in starting or running status, then we cannot
+        cancel it, so a bad request error should be returned.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+            status=MigrateSubscription.ERROR,
+        )
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.post(
+            reverse('migration-cancel', kwargs={'migration_id': migrate.pk}))
+        self.assertEqual(response.status_code, 400)
+
+    @responses.activate
+    def test_successful_retry(self):
+        """
+        On a valid request, the migration status should be set to cancelled,
+        the cancel action should be logged on the history, and a new log object
+        should be created.
+        """
+        mock_get_messagesets([])
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+            status=MigrateSubscription.RUNNING,
+        )
+        user = User.objects.create_user('testuser')
+        self.client.force_login(user)
+        response = self.client.post(
+            reverse('migration-cancel', kwargs={'migration_id': migrate.pk}))
+        self.assertRedirects(response, reverse('migration-list'))
+
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.CANCELLED)
+
+        history = LogEntry.objects.last()
+        self.assertEqual(history.user, user)
+        self.assertEqual(history.action_flag, CHANGE)
+        self.assertEqual(history.change_message, "Cancelled task")
+
+        log = LogEvent.objects.last()
+        self.assertEqual(log.migrate_subscription, migrate)
+        self.assertEqual(log.log_level, logging.INFO)
+        self.assertEqual(log.message, "Cancelling task")
