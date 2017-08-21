@@ -10,11 +10,13 @@ import logging
 class MigrateSubscription(models.Model):
     STARTING = 'S'
     RUNNING = 'R'
+    CANCELLED = 'D'
     ERROR = 'E'
     COMPLETE = 'C'
     STATUS_CHOICES = (
         (STARTING, 'Starting'),
         (RUNNING, 'Running'),
+        (CANCELLED, 'Cancelled'),
         (ERROR, 'Error'),
         (COMPLETE, 'Complete'),
     )

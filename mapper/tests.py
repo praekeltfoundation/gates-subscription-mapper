@@ -654,6 +654,98 @@ class MigrateSubscriptionsTaskTest(TestCase):
         migrate.refresh_from_db()
         self.assertEqual(migrate.status, MigrateSubscription.ERROR)
 
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.log')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run_invalid_status(self, count_identities, log):
+        """
+        If the migration is not in the starting status when the task starts,
+        then we should not take any actions.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+            status=MigrateSubscription.CANCELLED)
+
+        migrate_subscriptions.delay(migrate.pk)
+
+        count_identities.assert_not_called()
+        log.assert_any_call(migrate, logging.INFO, "Stopping task run")
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.CANCELLED)
+
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.migrate_identity')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.fetch_identities')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run_cancelled_midway(
+            self, count_identities, fetch_identities, migrate_identities):
+        """
+        If a migration is cancelled midway, then we should stop running the
+        task.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1')
+
+        count_identities.return_value = 2
+        fetch_identities.return_value = ['identity1', 'identity2']
+
+        # By setting the side effect of the migrate identity function to
+        # cancelling the migration, this will have the effect of cancelling
+        # the task when the first identity gets processed.
+        def cancel_migration(*args):
+            migrate.status = MigrateSubscription.CANCELLED
+            migrate.save(update_fields=('status',))
+        migrate_identities.side_effect = cancel_migration
+
+        migrate_subscriptions.delay(migrate.pk)
+
+        count_identities.assert_called_once_with(migrate)
+        fetch_identities.assert_called_once_with(migrate)
+        # Ensure that this is only called once, then the task stopped
+        migrate_identities.assert_called_once_with(migrate, 'identity1')
+
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.CANCELLED)
+        self.assertEqual(migrate.current, 1)
+        self.assertEqual(LogEvent.objects.last().message, "Stopping task run")
+
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.migrate_identity')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.fetch_identities')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run_cancelled_after_processing_identities(
+            self, count_identities, fetch_identities, migrate_identities):
+        """
+        If a migration is cancelled after processing all the identities, then
+        we should stop running the task.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1')
+
+        count_identities.return_value = 1
+        fetch_identities.return_value = ['identity1']
+
+        # By setting the side effect of the migrate identity function to
+        # cancelling the migration, this will have the effect of cancelling
+        # the task when all the identities have been processed, since we only
+        # have one identity
+        def cancel_migration(*args):
+            migrate.status = MigrateSubscription.CANCELLED
+            migrate.save(update_fields=('status',))
+        migrate_identities.side_effect = cancel_migration
+
+        migrate_subscriptions.delay(migrate.pk)
+
+        count_identities.assert_called_once_with(migrate)
+        fetch_identities.assert_called_once_with(migrate)
+        # Ensure that this is only called once, then the task stopped
+        migrate_identities.assert_called_once_with(migrate, 'identity1')
+
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.CANCELLED)
+        self.assertEqual(migrate.current, 1)
+        self.assertEqual(LogEvent.objects.last().message, "Stopping task run")
+
 
 class LogEventModelTests(TestCase):
     def test_log_event_display(self):
