@@ -157,14 +157,16 @@ class RetrySubscriptionView(LoginRequiredMixin, View):
         migrate = get_object_or_404(
             MigrateSubscription, pk=self.kwargs['migration_id'])
 
-        # Atomic update if errored
+        # Atomic update if errored or cancelled
         count = MigrateSubscription.objects.filter(
-            pk=self.kwargs['migration_id'],
-            status=MigrateSubscription.ERROR).update(
+            Q(pk=self.kwargs['migration_id']),
+            Q(status=MigrateSubscription.ERROR) |
+            Q(status=MigrateSubscription.CANCELLED)).update(
                 status=MigrateSubscription.STARTING)
         if count != 1:
             return HttpResponseBadRequest(
-                "Subscription Migration must be in error state to be retried.")
+                "Subscription Migration must be in error or cancelled state to"
+                "be retried.")
 
         migrate.status = MigrateSubscription.STARTING
         migrate.save(update_fields=('status',))
@@ -207,8 +209,8 @@ class CancelSubscriptionView(LoginRequiredMixin, View):
                 status=MigrateSubscription.CANCELLED)
         if count != 1:
             return HttpResponseBadRequest(
-                "Subscription Migration must be in running state to be "
-                "cancelled.")
+                "Subscription Migration must be in starting or running state "
+                "to be cancelled.")
 
         # Add to history who cancelled the task
         LogEntry.objects.log_action(

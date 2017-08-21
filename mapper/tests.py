@@ -167,8 +167,8 @@ class MigrationSubscriptionsListViewTests(TestCase):
     @responses.activate
     def test_retry_button(self):
         """
-        If a listed migration is in the error state, then there should be
-        a retry button.
+        If a listed migration is in the error or cancelled state, then there
+        should be a retry button.
         """
         m = MigrateSubscription.objects.create(
             from_messageset=1, to_messageset=2,
@@ -186,6 +186,41 @@ class MigrationSubscriptionsListViewTests(TestCase):
         response = self.client.get(reverse('migration-list'))
         self.assertContains(
             response, '<button type="submit">Retry</button>', html=True)
+
+        m.status = MigrateSubscription.CANCELLED
+        m.save()
+        response = self.client.get(reverse('migration-list'))
+        self.assertContains(
+            response, '<button type="submit">Retry</button>', html=True)
+
+    @responses.activate
+    def test_cancel_button(self):
+        """
+        If a listed migration is in the starting or running state, then there
+        should be a cancel button.
+        """
+        m = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='test-table', column_name='test-column',
+            status=MigrateSubscription.ERROR)
+        mock_get_messagesets([])
+        self.client.force_login(User.objects.create_user('testuser'))
+
+        response = self.client.get(reverse('migration-list'))
+        self.assertNotContains(
+            response, '<button type="submit">Cancel</button>', html=True)
+
+        m.status = MigrateSubscription.STARTING
+        m.save()
+        response = self.client.get(reverse('migration-list'))
+        self.assertContains(
+            response, '<button type="submit">Cancel</button>', html=True)
+
+        m.status = MigrateSubscription.RUNNING
+        m.save()
+        response = self.client.get(reverse('migration-list'))
+        self.assertContains(
+            response, '<button type="submit">Cancel</button>', html=True)
 
 
 class CreateSubscriptionMigrationFormTests(TestCase):

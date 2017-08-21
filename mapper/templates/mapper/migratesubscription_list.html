@@ -30,11 +30,16 @@
                     <td>{{ messagesets|lookup:migration.from_messageset }} to {{ messagesets|lookup:migration.to_messageset }}</td>
                     <td>{{ migration.get_status_display }} {{ migration.current }}/{% if migration.total %}{{ migration.total }}{% else %}-{% endif %}</td>
                     <td>
-                        {# TODO: Add action buttons here #}
-                        {% if migration.status == 'E' %}
+                        {% if migration.status == 'E'  or migration.status == 'D' %}
                         <form action="{% url 'migration-retry' migration_id=migration.pk %}" method="post">
                             {% csrf_token %}
                             <button type="submit">Retry</button>
+                        </form>
+                        {% endif %}
+                        {% if migration.status == 'S' or migration.status == 'R' %}
+                        <form action="{% url 'migration-cancel' migration_id=migration.pk %}" method="post">
+                            {% csrf_token %}
+                            <button type="submit">Cancel</button>
                         </form>
                         {% endif %}
                         <a href="{% url 'log-list' migration_id=migration.pk %}">Logs</a>
