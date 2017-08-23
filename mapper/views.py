@@ -168,9 +168,6 @@ class RetrySubscriptionView(LoginRequiredMixin, View):
                 "Subscription Migration must be in error or cancelled state to"
                 "be retried.")
 
-        migrate.status = MigrateSubscription.STARTING
-        migrate.save(update_fields=('status',))
-
         # Add to history who retried the task
         LogEntry.objects.log_action(
             user_id=request.user.pk,
