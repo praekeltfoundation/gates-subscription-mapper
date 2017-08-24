@@ -11,4 +11,5 @@ class SequenceMapper(object):
         # Default to no mapping
         return sequence
 
+
 map_sequence = SequenceMapper().map
