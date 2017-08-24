@@ -10,11 +10,13 @@ import logging
 class MigrateSubscription(models.Model):
     STARTING = 'S'
     RUNNING = 'R'
+    CANCELLED = 'D'
     ERROR = 'E'
     COMPLETE = 'C'
     STATUS_CHOICES = (
         (STARTING, 'Starting'),
         (RUNNING, 'Running'),
+        (CANCELLED, 'Cancelled'),
         (ERROR, 'Error'),
         (COMPLETE, 'Complete'),
     )
@@ -46,6 +48,18 @@ class MigrateSubscription(models.Model):
         indexes = [
             models.Index(fields=['-created_at']),
         ]
+
+    def can_be_cancelled(self):
+        """
+        Whether the task is in a state that allows it to be cancelled.
+        """
+        return self.status == self.STARTING or self.status == self.RUNNING
+
+    def can_be_resumed(self):
+        """
+        Whether the task is in a state that allows it to be resumed.
+        """
+        return self.status == self.CANCELLED or self.status == self.ERROR
 
     def __str__(self):
         return (

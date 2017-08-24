@@ -2,6 +2,7 @@
 from __future__ import unicode_literals
 
 from django.db import connections
+from django.db.models import Q
 from django.conf import settings
 from django.contrib.admin.models import LogEntry, ADDITION, CHANGE
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -155,12 +156,17 @@ class RetrySubscriptionView(LoginRequiredMixin, View):
     def post(self, request, *args, **kwargs):
         migrate = get_object_or_404(
             MigrateSubscription, pk=self.kwargs['migration_id'])
-        if migrate.status != MigrateSubscription.ERROR:
-            return HttpResponseBadRequest(
-                "Subscription Migration must be in error state to be retried.")
 
-        migrate.status = MigrateSubscription.STARTING
-        migrate.save(update_fields=('status',))
+        # Atomic update if errored or cancelled
+        count = MigrateSubscription.objects.filter(
+            Q(pk=self.kwargs['migration_id']),
+            Q(status=MigrateSubscription.ERROR) |
+            Q(status=MigrateSubscription.CANCELLED)).update(
+                status=MigrateSubscription.STARTING)
+        if count != 1:
+            return HttpResponseBadRequest(
+                "Subscription Migration must be in error or cancelled state to"
+                "be retried.")
 
         # Add to history who retried the task
         LogEntry.objects.log_action(
@@ -181,6 +187,46 @@ class RetrySubscriptionView(LoginRequiredMixin, View):
         )
 
         migrate_subscriptions.delay(migrate.pk)
+        return redirect('migration-list')
+
+
+class CancelSubscriptionView(LoginRequiredMixin, View):
+    """
+    If a task is starting or running, we want to be able to cancel it.
+    """
+    def post(self, request, *args, **kwargs):
+        migrate = get_object_or_404(
+            MigrateSubscription, pk=self.kwargs['migration_id'])
+
+        # Atomic update if running
+        count = MigrateSubscription.objects.filter(
+            Q(pk=self.kwargs['migration_id']),
+            Q(status=MigrateSubscription.STARTING) |
+            Q(status=MigrateSubscription.RUNNING)).update(
+                status=MigrateSubscription.CANCELLED)
+        if count != 1:
+            return HttpResponseBadRequest(
+                "Subscription Migration must be in starting or running state "
+                "to be cancelled.")
+
+        # Add to history who cancelled the task
+        LogEntry.objects.log_action(
+            user_id=request.user.pk,
+            content_type_id=ContentType.objects.get_for_model(
+                MigrateSubscription).pk,
+            object_id=migrate.pk,
+            object_repr=force_text(migrate),
+            action_flag=CHANGE,
+            change_message="Cancelled task",
+        )
+
+        # Add to the log that the task was cancelled
+        LogEvent.objects.create(
+            migrate_subscription=migrate,
+            log_level=logging.INFO,
+            message="Cancelling task",
+        )
+
         return redirect('migration-list')
 
 

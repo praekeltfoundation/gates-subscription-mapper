@@ -76,9 +76,15 @@ class MigrateSubscriptionsTask(Task):
         migrate = MigrateSubscription.objects.get(pk=migrate_subscription_id)
 
         self.log(migrate, INFO, "Setting task ID")
-        migrate.task_id = self.request.id
-        migrate.status = MigrateSubscription.RUNNING
-        migrate.save(update_fields=('task_id', 'status'))
+        # Atomically transition to running state, stopping the task if it
+        # is not in the starting status
+        num = MigrateSubscription.objects.filter(
+            pk=migrate_subscription_id, status=MigrateSubscription.STARTING
+            ).update(
+                task_id=self.request.id, status=MigrateSubscription.RUNNING)
+        if num != 1:
+            self.log(migrate, INFO, "Stopping task run")
+            return
         self.log(
             migrate, INFO,
             "Set task ID to {task_id}".format(task_id=migrate.task_id))
@@ -92,13 +98,26 @@ class MigrateSubscriptionsTask(Task):
 
         self.log(migrate, INFO, "Processing identities")
         for identity in self.fetch_identities(migrate):
+            # Check to see if the task has been cancelled before each update
+            status = MigrateSubscription.objects.values_list(
+                'status', flat=True).get(pk=migrate_subscription_id)
+            if status != MigrateSubscription.RUNNING:
+                self.log(migrate, INFO, "Stopping task run")
+                return
             self.migrate_identity(migrate, identity)
             migrate.current = F('current') + 1
             migrate.save(update_fields=('current',))
 
-        migrate.completed_at = timezone.now()
-        migrate.status = MigrateSubscription.COMPLETE
-        migrate.save(update_fields=('completed_at', 'status'))
+        # Atomically transision to complete state, stopping the task if it
+        # is not in the running status
+        num = MigrateSubscription.objects.filter(
+            pk=migrate_subscription_id, status=MigrateSubscription.RUNNING
+            ).update(
+                completed_at=timezone.now(),
+                status=MigrateSubscription.COMPLETE)
+        if num != 1:
+            self.log(migrate, INFO, "Stopping task run")
+            return
         self.log(
             migrate, INFO,
             "Completed processing identities at {timestamp}".format(

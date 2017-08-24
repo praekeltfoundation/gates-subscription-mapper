@@ -167,8 +167,8 @@ class MigrationSubscriptionsListViewTests(TestCase):
     @responses.activate
     def test_retry_button(self):
         """
-        If a listed migration is in the error state, then there should be
-        a retry button.
+        If a listed migration is in the error or cancelled state, then there
+        should be a retry button.
         """
         m = MigrateSubscription.objects.create(
             from_messageset=1, to_messageset=2,
@@ -186,6 +186,41 @@ class MigrationSubscriptionsListViewTests(TestCase):
         response = self.client.get(reverse('migration-list'))
         self.assertContains(
             response, '<button type="submit">Retry</button>', html=True)
+
+        m.status = MigrateSubscription.CANCELLED
+        m.save()
+        response = self.client.get(reverse('migration-list'))
+        self.assertContains(
+            response, '<button type="submit">Retry</button>', html=True)
+
+    @responses.activate
+    def test_cancel_button(self):
+        """
+        If a listed migration is in the starting or running state, then there
+        should be a cancel button.
+        """
+        m = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='test-table', column_name='test-column',
+            status=MigrateSubscription.ERROR)
+        mock_get_messagesets([])
+        self.client.force_login(User.objects.create_user('testuser'))
+
+        response = self.client.get(reverse('migration-list'))
+        self.assertNotContains(
+            response, '<button type="submit">Cancel</button>', html=True)
+
+        m.status = MigrateSubscription.STARTING
+        m.save()
+        response = self.client.get(reverse('migration-list'))
+        self.assertContains(
+            response, '<button type="submit">Cancel</button>', html=True)
+
+        m.status = MigrateSubscription.RUNNING
+        m.save()
+        response = self.client.get(reverse('migration-list'))
+        self.assertContains(
+            response, '<button type="submit">Cancel</button>', html=True)
 
 
 class CreateSubscriptionMigrationFormTests(TestCase):
@@ -654,6 +689,98 @@ class MigrateSubscriptionsTaskTest(TestCase):
         migrate.refresh_from_db()
         self.assertEqual(migrate.status, MigrateSubscription.ERROR)
 
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.log')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run_invalid_status(self, count_identities, log):
+        """
+        If the migration is not in the starting status when the task starts,
+        then we should not take any actions.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+            status=MigrateSubscription.CANCELLED)
+
+        migrate_subscriptions.delay(migrate.pk)
+
+        count_identities.assert_not_called()
+        log.assert_any_call(migrate, logging.INFO, "Stopping task run")
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.CANCELLED)
+
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.migrate_identity')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.fetch_identities')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run_cancelled_midway(
+            self, count_identities, fetch_identities, migrate_identities):
+        """
+        If a migration is cancelled midway, then we should stop running the
+        task.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1')
+
+        count_identities.return_value = 2
+        fetch_identities.return_value = ['identity1', 'identity2']
+
+        # By setting the side effect of the migrate identity function to
+        # cancelling the migration, this will have the effect of cancelling
+        # the task when the first identity gets processed.
+        def cancel_migration(*args):
+            migrate.status = MigrateSubscription.CANCELLED
+            migrate.save(update_fields=('status',))
+        migrate_identities.side_effect = cancel_migration
+
+        migrate_subscriptions.delay(migrate.pk)
+
+        count_identities.assert_called_once_with(migrate)
+        fetch_identities.assert_called_once_with(migrate)
+        # Ensure that this is only called once, then the task stopped
+        migrate_identities.assert_called_once_with(migrate, 'identity1')
+
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.CANCELLED)
+        self.assertEqual(migrate.current, 1)
+        self.assertEqual(LogEvent.objects.last().message, "Stopping task run")
+
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.migrate_identity')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.fetch_identities')
+    @mock.patch('mapper.tasks.MigrateSubscriptionsTask.count_identities')
+    def test_run_cancelled_after_processing_identities(
+            self, count_identities, fetch_identities, migrate_identities):
+        """
+        If a migration is cancelled after processing all the identities, then
+        we should stop running the task.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1')
+
+        count_identities.return_value = 1
+        fetch_identities.return_value = ['identity1']
+
+        # By setting the side effect of the migrate identity function to
+        # cancelling the migration, this will have the effect of cancelling
+        # the task when all the identities have been processed, since we only
+        # have one identity
+        def cancel_migration(*args):
+            migrate.status = MigrateSubscription.CANCELLED
+            migrate.save(update_fields=('status',))
+        migrate_identities.side_effect = cancel_migration
+
+        migrate_subscriptions.delay(migrate.pk)
+
+        count_identities.assert_called_once_with(migrate)
+        fetch_identities.assert_called_once_with(migrate)
+        # Ensure that this is only called once, then the task stopped
+        migrate_identities.assert_called_once_with(migrate, 'identity1')
+
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.CANCELLED)
+        self.assertEqual(migrate.current, 1)
+        self.assertEqual(LogEvent.objects.last().message, "Stopping task run")
+
 
 class LogEventModelTests(TestCase):
     def test_log_event_display(self):
@@ -744,3 +871,77 @@ class TestRetrySubscriptionMigrate(TestCase):
         self.assertEqual(log.message, "Retrying task")
 
         migrate_subscriptions.assert_called_once_with(migrate.pk)
+
+
+class TestCancelSubscriptionMigrate(TestCase):
+    def test_login_required(self):
+        """
+        You must be logged in to be able to use this endpoint.
+        """
+        url = reverse('migration-cancel', kwargs={'migration_id': 1})
+        response = self.client.post(url)
+        self.assertRedirects(
+            response,
+            '{}?next={}'.format(reverse('login'), url)
+        )
+
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_missing_migration(self):
+        """
+        If the migration specified by the id doesn't exist, a 404 should be
+        returned.
+        """
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.post(
+            reverse('migration-cancel', kwargs={'migration_id': 1}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_non_running_migration(self):
+        """
+        If a migration is not in starting or running status, then we cannot
+        cancel it, so a bad request error should be returned.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+            status=MigrateSubscription.ERROR,
+        )
+        self.client.force_login(User.objects.create_user('testuser'))
+        response = self.client.post(
+            reverse('migration-cancel', kwargs={'migration_id': migrate.pk}))
+        self.assertEqual(response.status_code, 400)
+
+    @responses.activate
+    def test_successful_cancel(self):
+        """
+        On a valid request, the migration status should be set to cancelled,
+        the cancel action should be logged on the history, and a new log object
+        should be created.
+        """
+        mock_get_messagesets([])
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table1', column_name='column1',
+            status=MigrateSubscription.RUNNING,
+        )
+        user = User.objects.create_user('testuser')
+        self.client.force_login(user)
+        response = self.client.post(
+            reverse('migration-cancel', kwargs={'migration_id': migrate.pk}))
+        self.assertRedirects(response, reverse('migration-list'))
+
+        migrate.refresh_from_db()
+        self.assertEqual(migrate.status, MigrateSubscription.CANCELLED)
+
+        history = LogEntry.objects.last()
+        self.assertEqual(history.user, user)
+        self.assertEqual(history.action_flag, CHANGE)
+        self.assertEqual(history.change_message, "Cancelled task")
+
+        log = LogEvent.objects.last()
+        self.assertEqual(log.migrate_subscription, migrate)
+        self.assertEqual(log.log_level, logging.INFO)
+        self.assertEqual(log.message, "Cancelling task")
