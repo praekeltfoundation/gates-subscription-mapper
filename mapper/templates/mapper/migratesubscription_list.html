@@ -30,13 +30,13 @@
                     <td>{{ messagesets|lookup:migration.from_messageset }} to {{ messagesets|lookup:migration.to_messageset }}</td>
                     <td>{{ migration.get_status_display }} {{ migration.current }}/{% if migration.total %}{{ migration.total }}{% else %}-{% endif %}</td>
                     <td>
-                        {% if migration.status == 'E'  or migration.status == 'D' %}
+                        {% if migration.can_be_resumed %}
                         <form action="{% url 'migration-retry' migration_id=migration.pk %}" method="post">
                             {% csrf_token %}
                             <button type="submit">Retry</button>
                         </form>
                         {% endif %}
-                        {% if migration.status == 'S' or migration.status == 'R' %}
+                        {% if migration.can_be_cancelled %}
                         <form action="{% url 'migration-cancel' migration_id=migration.pk %}" method="post">
                             {% csrf_token %}
                             <button type="submit">Cancel</button>

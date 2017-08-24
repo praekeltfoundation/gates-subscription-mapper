@@ -49,6 +49,18 @@ class MigrateSubscription(models.Model):
             models.Index(fields=['-created_at']),
         ]
 
+    def can_be_cancelled(self):
+        """
+        Whether the task is in a state that allows it to be cancelled.
+        """
+        return self.status == self.STARTING or self.status == self.RUNNING
+
+    def can_be_resumed(self):
+        """
+        Whether the task is in a state that allows it to be resumed.
+        """
+        return self.status == self.CANCELLED or self.status == self.ERROR
+
     def __str__(self):
         return (
             "{status} migrate {column} on {table} from message set {from_ms} "
