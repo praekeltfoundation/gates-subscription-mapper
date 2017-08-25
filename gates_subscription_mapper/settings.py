@@ -44,6 +44,8 @@ INSTALLED_APPS = [
     'django.contrib.humanize',
     # 3rd party
     'raven.contrib.django.raven_compat',
+    'rest_framework',
+    'rest_framework.authtoken',
     # us
     'mapper',
 ]

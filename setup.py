@@ -42,6 +42,7 @@ setup(
         'psycopg2==2.7.3',
         'seed-services-client==0.26.0',
         'celery==4.1.0',
+        'djangorestframework==3.6.4',
     ],
     classifiers=[
         'Development Status :: 4 - Beta',
