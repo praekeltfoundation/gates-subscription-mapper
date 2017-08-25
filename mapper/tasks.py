@@ -1,13 +1,19 @@
+# -*- coding: utf-8 -*-
 from __future__ import absolute_import, unicode_literals
+
 from celery.task import Task
 from celery.utils.log import get_task_logger
+from django.conf import settings
 from django.db import connections, transaction
 from django.db.models import F
 from django.utils import timezone
-from logging import INFO, ERROR
+from logging import INFO, ERROR, WARNING
+from seed_services_client.stage_based_messaging import (
+    StageBasedMessagingApiClient)
 from uuid import uuid4
 
 from .models import LogEvent, MigrateSubscription
+from .sequence_mapper import map_sequence
 
 
 class MigrateSubscriptionsTask(Task):
@@ -65,12 +71,72 @@ class MigrateSubscriptionsTask(Task):
                 for row in chunk:
                     yield row[0]
 
+    def _get_stage_based_messaging_client(self):
+        """
+        Get the cached stage based messaging client, or create and cache on the
+        instance.
+        """
+        if getattr(self, 'sbm_client', None) is None:
+            self.sbm_client = StageBasedMessagingApiClient(
+                settings.STAGE_BASED_MESSAGING_TOKEN,
+                settings.STAGE_BASED_MESSAGING_URL)
+        return self.sbm_client
+
+    def get_messageset(self, messageset_id):
+        if getattr(self, 'messagesets', None) is None:
+            self.messagesets = {}
+        if messageset_id not in self.messagesets:
+            client = self._get_stage_based_messaging_client()
+            self.messagesets[messageset_id] = client.get_messageset(
+                messageset_id)
+        return self.messagesets[messageset_id]
+
     def migrate_identity(self, migrate, identity):
         """
         Migrates an identity from one messageset to another.
         """
-        # TODO: Actually migrate the identity's subscription
-        pass
+        client = self._get_stage_based_messaging_client()
+        existing_subs = list(client.get_subscriptions({
+            'identity': identity,
+            'messageset': migrate.from_messageset,
+        })['results'])
+        if len(existing_subs) == 0:
+            self.log(
+                migrate, ERROR,
+                "Identity {identity} has no existing subscriptions to {ms}. "
+                "Not migrating identity.".format(
+                    identity=identity, ms=self.get_messageset(
+                        migrate.from_messageset)['short_name'])
+            )
+            return
+        elif len(existing_subs) > 1:
+            self.log(
+                migrate, WARNING,
+                "Identity {identity} has {num} subscriptions to {messageset}. "
+                "All will be cancelled.".format(
+                    identity=identity, num=len(existing_subs),
+                    messageset=self.get_messageset(
+                        migrate.from_messageset)['short_name'])
+            )
+
+        for sub in existing_subs:
+            client.update_subscription(sub['id'], data={'active': False})
+
+        sequence_number = map_sequence(
+            self.get_messageset(migrate.from_messageset)['short_name'],
+            self.get_messageset(migrate.to_messageset)['short_name'],
+            sub['next_sequence_number'],
+        )
+
+        client.create_subscription({
+            'identity': identity,
+            'messageset': migrate.to_messageset,
+            'initial_sequence_number': sequence_number,
+            'next_sequence_number': sequence_number,
+            'lang': sub['lang'],
+            'schedule': self.get_messageset(
+                migrate.to_messageset)['default_schedule'],
+        })
 
     def run(self, migrate_subscription_id, **kwargs):
         migrate = MigrateSubscription.objects.get(pk=migrate_subscription_id)

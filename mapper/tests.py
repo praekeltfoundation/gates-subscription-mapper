@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
 
 from django.db import connections
 from django.conf import settings
@@ -19,6 +19,7 @@ except ImportError:
     import unittest.mock as mock
 
 from .models import LogEvent, MigrateSubscription
+from .sequence_mapper import map_sequence
 from .tasks import migrate_subscriptions
 
 
@@ -64,6 +65,57 @@ def mock_get_messagesets(messagesets):
             "previous": None,
             "results": messagesets,
         })
+
+
+def mock_get_messageset(messageset_id, messageset_details):
+    responses.add(
+        responses.GET,
+        '{url}/messageset/{messageset_id}/'.format(
+            url=settings.STAGE_BASED_MESSAGING_URL,
+            messageset_id=messageset_id),
+        json=messageset_details,
+    )
+
+
+def mock_get_subscriptions(subscriptions, querystring=''):
+    responses.add(
+        responses.GET,
+        '{url}/subscriptions/{querystring}'.format(
+            url=settings.STAGE_BASED_MESSAGING_URL,
+            querystring=querystring),
+        json={
+            "count": len(subscriptions),
+            "next": None,
+            "previous": None,
+            "results": subscriptions,
+        })
+
+
+def mock_update_subscription(subscription_id):
+    responses.add(
+        responses.PATCH,
+        '{url}/subscriptions/{subscription_id}/'.format(
+            url=settings.STAGE_BASED_MESSAGING_URL,
+            subscription_id=subscription_id),
+        json={}
+    )
+
+
+def mock_create_subscription():
+    responses.add(
+        responses.POST,
+        '{}/subscriptions/'.format(settings.STAGE_BASED_MESSAGING_URL),
+        json={}
+    )
+
+
+def get_calls_to_url(url):
+    """
+    Filters out responses calls to just the ones to the specified url.
+    """
+    for r in responses.calls:
+        if r.request.url == url:
+            yield r
 
 
 class MigrationSubscriptionsListViewTests(TestCase):
@@ -196,8 +248,8 @@ class MigrationSubscriptionsListViewTests(TestCase):
     @responses.activate
     def test_cancel_button(self):
         """
-        If a listed migration is in the starting or running state, then there
-        should be a cancel button.
+        If a listed migration can be cancelled, then there should be a cancel
+        button.
         """
         m = MigrateSubscription.objects.create(
             from_messageset=1, to_messageset=2,
@@ -781,6 +833,117 @@ class MigrateSubscriptionsTaskTest(TestCase):
         self.assertEqual(migrate.current, 1)
         self.assertEqual(LogEvent.objects.last().message, "Stopping task run")
 
+    @responses.activate
+    def test_migrate_identity_no_existing_subs(self):
+        """
+        If an identity doesn't have any existing subscriptions to the specified
+        from messageset, then it should be skipped, and the appropriate log
+        message should be created.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table', column_name='column')
+        mock_get_subscriptions([], '?messageset=1&identity=test-identity')
+        # To get the messageset name for the log entry
+        mock_get_messageset(1, {'short_name': 'from_messageset'})
+
+        migrate_subscriptions.migrate_identity(migrate, 'test-identity')
+
+        log = LogEvent.objects.last()
+        self.assertEqual(log.log_level, logging.ERROR)
+        self.assertEqual(
+            log.message,
+            'Identity test-identity has no existing subscriptions to '
+            'from_messageset. Not migrating identity.')
+
+    @responses.activate
+    def test_migrate_identity_multiple_subscriptions(self):
+        """
+        If an identity has multiple subscriptions to the specified from
+        messageset, then a warning should be logged, and all of those
+        messagesets should be disabled.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table', column_name='column')
+        mock_get_subscriptions(
+            [{'id': 1, 'next_sequence_number': 1, 'lang': 'afr'},
+             {'id': 2, 'next_sequence_number': 2, 'lang': 'eng'}],
+            '?messageset=1&identity=test-identity')
+        mock_update_subscription(1)
+        mock_update_subscription(2)
+        # To get the messageset name for the log entry + mapping
+        mock_get_messageset(1, {'short_name': 'from_messageset'})
+        mock_get_messageset(2, {
+            'short_name': 'to_messageset', 'default_schedule': 4})
+        mock_create_subscription()
+
+        migrate_subscriptions.migrate_identity(migrate, 'test-identity')
+
+        log = LogEvent.objects.last()
+        self.assertEqual(log.log_level, logging.WARNING)
+        self.assertEqual(
+            log.message, 'Identity test-identity has 2 subscriptions to '
+            'from_messageset. All will be cancelled.')
+
+        [cancel_sub1] = list(get_calls_to_url(
+            '{url}/subscriptions/{subscription_id}/'.format(
+                url=settings.STAGE_BASED_MESSAGING_URL, subscription_id=1)))
+        self.assertEqual(cancel_sub1.request.method, responses.PATCH)
+        self.assertEqual(
+            json.loads(cancel_sub1.request.body), {'active': False})
+
+        [cancel_sub2] = list(get_calls_to_url(
+            '{url}/subscriptions/{subscription_id}/'.format(
+                url=settings.STAGE_BASED_MESSAGING_URL, subscription_id=2)))
+        self.assertEqual(cancel_sub2.request.method, responses.PATCH)
+        self.assertEqual(
+            json.loads(cancel_sub2.request.body), {'active': False})
+
+    @responses.activate
+    def test_migrate_identity_single_subscription(self):
+        """
+        If the identity has a single subscription to the from messageset, then
+        that should be cancelled, and a new subscription should be created
+        for the to messageset.
+        """
+        migrate = MigrateSubscription.objects.create(
+            from_messageset=1, to_messageset=2,
+            table_name='table', column_name='column')
+        mock_get_subscriptions(
+            [{'id': 1, 'next_sequence_number': 5, 'lang': 'eng'}],
+            '?messageset=1&identity=test-identity')
+        mock_update_subscription(1)
+        # To get the messageset name for the log entry + mapping
+        mock_get_messageset(1, {'short_name': 'from_messageset'})
+        mock_get_messageset(2, {
+            'short_name': 'to_messageset', 'default_schedule': 4})
+        mock_create_subscription()
+
+        migrate_subscriptions.migrate_identity(migrate, 'test-identity')
+
+        self.assertEqual(LogEvent.objects.count(), 0)
+
+        [cancel_sub1] = list(get_calls_to_url(
+            '{url}/subscriptions/{subscription_id}/'.format(
+                url=settings.STAGE_BASED_MESSAGING_URL, subscription_id=1)))
+        self.assertEqual(cancel_sub1.request.method, responses.PATCH)
+        self.assertEqual(
+            json.loads(cancel_sub1.request.body), {'active': False})
+
+        [create_sub] = list(get_calls_to_url(
+            '{url}/subscriptions/'.format(
+                url=settings.STAGE_BASED_MESSAGING_URL, subscription_id=1)))
+        self.assertEqual(create_sub.request.method, responses.POST)
+        self.assertEqual(json.loads(create_sub.request.body), {
+            'identity': 'test-identity',
+            'initial_sequence_number': 5,
+            'next_sequence_number': 5,
+            'lang': 'eng',
+            'messageset': 2,
+            'schedule': 4,
+        })
+
 
 class LogEventModelTests(TestCase):
     def test_log_event_display(self):
@@ -945,3 +1108,12 @@ class TestCancelSubscriptionMigrate(TestCase):
         self.assertEqual(log.migrate_subscription, migrate)
         self.assertEqual(log.log_level, logging.INFO)
         self.assertEqual(log.message, "Cancelling task")
+
+
+class MapSubscriptionsTest(TestCase):
+    def test_default_mapping(self):
+        """
+        By default, the output sequence should equal the input sequence.
+        """
+        self.assertEqual(map_sequence(None, None, 1), 1)
+        self.assertEqual(map_sequence(None, None, 100), 100)
