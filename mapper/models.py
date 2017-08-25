@@ -100,3 +100,21 @@ class LogEvent(models.Model):
         return "{created_at} [{level}]: {message}".format(
             created_at=self.created_at, level=self.get_log_level_display(),
             message=self.message)
+
+
+@python_2_unicode_compatible
+class MigratedIdentity(models.Model):
+    migrate_subscription = models.ForeignKey(
+        MigrateSubscription, on_delete=models.CASCADE,
+        related_name='identities')
+    identity_uuid = models.UUIDField()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['identity_uuid'])
+        ]
+
+    def __str__(self):
+        return "Migrated {identity} on migration run {migrate}".format(
+            identity=str(self.identity_uuid),
+            migrate=self.migrate_subscription_id)
