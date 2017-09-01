@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
 
 from django.db import models
 from django.utils.encoding import python_2_unicode_compatible
@@ -104,17 +104,46 @@ class LogEvent(models.Model):
 
 @python_2_unicode_compatible
 class MigratedIdentity(models.Model):
+    """
+    Keeps track of each migrated identity, and on which migration run it was
+    migrated on.
+    """
     migrate_subscription = models.ForeignKey(
         MigrateSubscription, on_delete=models.CASCADE,
-        related_name='identities')
+        related_name='migrated_identities')
     identity_uuid = models.UUIDField()
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         indexes = [
             models.Index(fields=['identity_uuid'])
         ]
+        verbose_name_plural = "migrated identities"
 
     def __str__(self):
         return "Migrated {identity} on migration run {migrate}".format(
+            identity=str(self.identity_uuid),
+            migrate=self.migrate_subscription_id)
+
+
+@python_2_unicode_compatible
+class RevertedIdentity(models.Model):
+    """
+    Keeps track of each identity whose migration was reverted.
+    """
+    migrate_subscription = models.ForeignKey(
+        MigrateSubscription, on_delete=models.CASCADE,
+        related_name='reverted_identities')
+    identity_uuid = models.UUIDField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['identity_uuid'])
+        ]
+        verbose_name_plural = "reverted identities"
+
+    def __str__(self):
+        return "Reverted {identity} from migration run {migrate}".format(
             identity=str(self.identity_uuid),
             migrate=self.migrate_subscription_id)
