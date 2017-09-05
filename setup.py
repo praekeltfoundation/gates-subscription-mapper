@@ -43,6 +43,7 @@ setup(
         'seed-services-client==0.26.0',
         'celery==4.1.0',
         'djangorestframework==3.6.4',
+        'rapidpro-python==2.1.8',
     ],
     classifiers=[
         'Development Status :: 4 - Beta',
