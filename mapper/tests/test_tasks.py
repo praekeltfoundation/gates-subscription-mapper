@@ -300,7 +300,8 @@ class MigrateSubscriptionsTaskTest(TestCase):
         migrate = MigrateSubscription.objects.create(
             from_messageset=1, to_messageset=2,
             table_name='table', column_name='column')
-        mock_get_subscriptions([], '?messageset=1&identity=test-identity')
+        mock_get_subscriptions(
+            [], '?messageset=1&identity=test-identity&active=True')
         # To get the messageset name for the log entry
         mock_get_messageset(1, {'short_name': 'from_messageset'})
 
@@ -328,7 +329,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         mock_get_subscriptions(
             [{'id': 1, 'next_sequence_number': 1, 'lang': 'afr'},
              {'id': 2, 'next_sequence_number': 2, 'lang': 'eng'}],
-            '?messageset=1&identity={}'.format(uuid))
+            '?messageset=1&identity={}&active=True'.format(uuid))
         mock_update_subscription(1)
         mock_update_subscription(2)
         # To get the messageset name for the log entry + mapping
@@ -376,7 +377,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
             table_name='table', column_name='column')
         mock_get_subscriptions(
             [{'id': 1, 'next_sequence_number': 5, 'lang': 'eng'}],
-            '?messageset=1&identity={}'.format(uuid))
+            '?messageset=1&identity={}&active=True'.format(uuid))
         mock_update_subscription(1)
         # To get the messageset name for the log entry + mapping
         mock_get_messageset(1, {'short_name': 'from_messageset'})

@@ -38,7 +38,9 @@ def mock_get_subscriptions(subscriptions, querystring=''):
             "next": None,
             "previous": None,
             "results": subscriptions,
-        })
+        },
+        match_querystring=True
+    )
 
 
 def mock_update_subscription(subscription_id):
@@ -52,10 +54,28 @@ def mock_update_subscription(subscription_id):
 
 
 def mock_create_subscription():
-    responses.add(
+    def mirror_callback(request):
+        return (200, {}, request.body)
+
+    responses.add_callback(
         responses.POST,
         '{}/subscriptions/'.format(settings.STAGE_BASED_MESSAGING_URL),
-        json={}
+        callback=mirror_callback, content_type='application/json'
+    )
+
+
+def mock_get_rapidpro_contacts(contact_filter, contacts):
+    responses.add(
+        responses.GET,
+        '{url}api/v2/contacts.json?{contact_filter}'.format(
+            url=settings.RAPIDPRO_URL,
+            contact_filter=contact_filter),
+        json={
+            'next': None,
+            'previous': None,
+            'results': contacts,
+        },
+        match_querystring=True,
     )
 
 
