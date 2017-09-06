@@ -55,7 +55,7 @@ def mock_update_subscription(subscription_id):
 
 def mock_create_subscription():
     def mirror_callback(request):
-        return (200, {}, request.body)
+        return (201, {}, request.body)
 
     responses.add_callback(
         responses.POST,
