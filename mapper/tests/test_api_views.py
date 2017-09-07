@@ -8,13 +8,18 @@ from rest_framework import status
 from uuid import uuid4
 import responses
 import json
+try:
+    import mock
+except ImportError:
+    import unittest.mock as mock
 
 from mapper.api_views import RapidproOptout, NotFound, InvalidRapidproContact
 from mapper.models import (
     MigrateSubscription, MigratedIdentity, RevertedIdentity)
 from mapper.test_utils import (
     mock_get_rapidpro_contacts, mock_get_messageset, mock_get_subscriptions,
-    mock_update_subscription, mock_create_subscription, get_calls_to_url)
+    mock_update_subscription, mock_create_subscription, get_calls_to_url,
+    mock_get_messagesets)
 
 
 class TestRapidproOptoutView(TestCase):
@@ -60,12 +65,12 @@ class TestRapidproOptoutView(TestCase):
         """
         identity_uuid = str(uuid4())
         m1 = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='test-table', column_name='test-column')
         MigratedIdentity.objects.create(
             migrate_subscription=m1, identity_uuid=identity_uuid)
         m2 = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='test-table', column_name='test-column')
         MigratedIdentity.objects.create(
             migrate_subscription=m2, identity_uuid=identity_uuid)
@@ -113,15 +118,19 @@ class TestRapidproOptoutView(TestCase):
         """
         identity_uuid = str(uuid4())
         subscriptions = [
-            {'id': 'sub1'},
-            {'id': 'sub2'},
+            {'id': 'sub1', 'messageset': 'ms1'},
+            {'id': 'sub2', 'messageset': 'ms2'},
+            {'id': 'sub3', 'messageset': 'ms3'},
         ]
         mock_get_subscriptions(
-            subscriptions, '?identity={uuid}&messageset=1&active=True'.format(
+            subscriptions, '?identity={uuid}&active=True'.format(
                 uuid=identity_uuid))
+        mock_get_messageset('ms1', {'short_name': 'foo_gates_bar'})
+        mock_get_messageset('ms2', {'short_name': 'gates_messages'})
+        mock_get_messageset('ms3', {'short_name': 'seed_messages'})
 
-        subs = RapidproOptout().get_existing_subscriptions(identity_uuid, 1)
-        self.assertEqual(subs, subscriptions)
+        subs = RapidproOptout().get_existing_subscriptions(identity_uuid)
+        self.assertEqual(list(subs), subscriptions[:2])
 
     def test_request_contact_field_required(self):
         """
@@ -219,12 +228,12 @@ class TestRapidproOptoutView(TestCase):
             'modified_on': '2015-11-11T13:05:57.457742Z',
         }])
         m = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='test-table', column_name='test-column')
         MigratedIdentity.objects.create(
             migrate_subscription=m, identity_uuid=uuid_identity)
         mock_get_subscriptions(
-            [], '?messageset=2&identity={uuid}&active=True'.format(
+            [], '?identity={uuid}&active=True'.format(
                 uuid=uuid_identity))
         mock_get_messageset(2, {'short_name': 'test.messageset'})
 
@@ -236,16 +245,22 @@ class TestRapidproOptoutView(TestCase):
             json.loads(r.content), {
                 'detail':
                     'Seed identity {uuid} has no active subscriptions to '
-                    'test.messageset'.format(uuid=uuid_identity)
+                    'revert'.format(uuid=uuid_identity)
                 })
 
     @responses.activate
-    def test_request_success(self):
+    @mock.patch('mapper.api_views.map_backward')
+    def test_request_success(self, old_map_backwards):
         """
         If all is in order, all existing active subscriptions for the identity
         should be cancelled, and a new subscription should be created. A
         RevertedIdentity object should also be created.
         """
+        def new_map_backwards(messageset, sequence_number):
+            if messageset == 'test.gates.2':
+                return 'test.messageset.1', 5
+            self.fail('Incorrect messageset asked to map')
+        old_map_backwards.side_effect = new_map_backwards
         uuid_identity = str(uuid4())
         uuid_rapidpro = str(uuid4())
         mock_get_rapidpro_contacts('uuid={}'.format(uuid_rapidpro), [{
@@ -261,22 +276,29 @@ class TestRapidproOptoutView(TestCase):
             'modified_on': '2015-11-11T13:05:57.457742Z',
         }])
         m = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='test-table', column_name='test-column')
         MigratedIdentity.objects.create(
             migrate_subscription=m, identity_uuid=uuid_identity)
         subscriptions = [
-            {'id': 'old-sub-1', 'next_sequence_number': 5, 'lang': 'eng'},
-            {'id': 'old-sub-2', 'next_sequence_number': 5, 'lang': 'eng'}]
+            {
+                'id': 'old-sub-1', 'next_sequence_number': 5, 'lang': 'eng',
+                'messageset': 1,
+            },
+            {
+                'id': 'old-sub-2', 'next_sequence_number': 5, 'lang': 'eng',
+                'messageset': 2,
+            }]
         mock_get_subscriptions(
             subscriptions,
-            '?messageset=2&identity={uuid}&active=True'.format(
+            '?identity={uuid}&active=True'.format(
                 uuid=uuid_identity))
-        mock_get_messageset(1, {'short_name': 'test.messageset.1'})
-        mock_get_messageset(2, {
-            'short_name': 'test.messageset.2',
+        mock_get_messageset(1, {
+            'short_name': 'test.messageset.1',
             'default_schedule': 3,
         })
+        mock_get_messageset(2, {'short_name': 'test.gates.2'})
+        mock_get_messagesets([{'id': 1}], '?short_name=test.messageset.1')
         mock_update_subscription('old-sub-1')
         mock_update_subscription('old-sub-2')
         mock_create_subscription()
@@ -284,27 +306,25 @@ class TestRapidproOptoutView(TestCase):
         r = self.client.post(reverse('api:rapidpro-optout-list'), data={
             'contact': uuid_rapidpro,
         })
+        print json.loads(r.content)
         self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.maxDiff = None
         self.assertEqual(
             json.loads(r.content), {
-                'cancelled_subscriptions': subscriptions,
-                'created_subscription': {
+                'cancelled_subscriptions': subscriptions[1:2],
+                'created_subscriptions': [{
                     'lang': 'eng',
                     'messageset': 1,
                     'schedule': 3,
                     'next_sequence_number': 5,
                     'initial_sequence_number': 5,
                     'identity': uuid_identity,
-                }
+                }]
             })
 
-        [cancel1] = list(
-            get_calls_to_url('{url}/subscriptions/{sub_id}/'.format(
-                url=settings.STAGE_BASED_MESSAGING_URL, sub_id='old-sub-1')))
         [cancel2] = list(
             get_calls_to_url('{url}/subscriptions/{sub_id}/'.format(
                 url=settings.STAGE_BASED_MESSAGING_URL, sub_id='old-sub-2')))
-        self.assertEqual(json.loads(cancel1.request.body), {'active': False})
         self.assertEqual(json.loads(cancel2.request.body), {'active': False})
 
         [create] = list(get_calls_to_url(

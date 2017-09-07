@@ -5,16 +5,17 @@ from django.conf import settings
 import responses
 
 
-def mock_get_messagesets(messagesets):
+def mock_get_messagesets(messagesets, querystring=''):
     responses.add(
         responses.GET,
-        '{}/messageset/'.format(settings.STAGE_BASED_MESSAGING_URL),
+        '{url}/messageset/{querystring}'.format(
+            url=settings.STAGE_BASED_MESSAGING_URL, querystring=querystring),
         json={
             "count": len(messagesets),
             "next": None,
             "previous": None,
             "results": messagesets,
-        })
+        }, match_querystring=True)
 
 
 def mock_get_messageset(messageset_id, messageset_details):

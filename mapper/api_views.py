@@ -14,7 +14,7 @@ from temba_client.v2 import TembaClient
 from uuid import UUID
 
 from mapper.models import MigratedIdentity, RevertedIdentity
-from mapper.sequence_mapper import map_sequence
+from mapper.sequence_mapper import map_backward, NoMappingFound
 
 
 class RapidproOptoutSerializer(serializers.Serializer):
@@ -73,16 +73,20 @@ class RapidproOptout(ViewSet):
                 messageset_id)
         return self.messagesets[messageset_id]
 
-    def get_existing_subscriptions(self, identity_uuid, messageset):
+    def get_messageset_by_shortname(self, short_name):
+        return list(self.sbm_client.get_messagesets(
+            params={'short_name': short_name})['results'])[0]
+
+    def get_existing_subscriptions(self, identity_uuid):
         """
-        Gets all active subscriptions to the specified messageset for the
+        Gets all active subscriptions to any gates messagesets for the
         specified identity.
         """
-        return list(self.sbm_client.get_subscriptions({
-            'identity': identity_uuid,
-            'messageset': messageset,
-            'active': True,
-        })['results'])
+        for sub in self.sbm_client.get_subscriptions({
+                'identity': identity_uuid, 'active': True})['results']:
+            if 'gates' in self.get_messageset(
+                    sub['messageset'])['short_name']:
+                yield sub
 
     def create(self, request):
         """
@@ -102,40 +106,40 @@ class RapidproOptout(ViewSet):
                     contact.uuid, settings.RAPIDPRO_UUID_FIELD))
 
         migration = self.find_migration(seed_uuid)
-        existing_subs = self.get_existing_subscriptions(
-            seed_uuid, migration.to_messageset)
+        existing_subs = list(self.get_existing_subscriptions(seed_uuid))
 
         if len(existing_subs) == 0:
             raise InvalidRapidproContact(
-                'Seed identity {} has no active subscriptions to {}'.format(
-                    seed_uuid, self.get_messageset(
-                        migration.to_messageset)['short_name']
-                ))
+                'Seed identity {} has no active subscriptions to '
+                'revert'.format(seed_uuid)
+            )
 
+        new_subs = []
         for old_sub in existing_subs:
             self.sbm_client.update_subscription(
                 old_sub['id'], {'active': False})
-
-        sequence_number = map_sequence(
-            self.get_messageset(migration.to_messageset)['short_name'],
-            self.get_messageset(migration.from_messageset)['short_name'],
-            old_sub['next_sequence_number']
-        )
-
-        new_sub = self.sbm_client.create_subscription({
-            'identity': seed_uuid,
-            'messageset': migration.from_messageset,
-            'initial_sequence_number': sequence_number,
-            'next_sequence_number': sequence_number,
-            'lang': old_sub['lang'],
-            'schedule': self.get_messageset(
-                migration.to_messageset)['default_schedule'],
-        })
+            try:
+                messageset, sequence = map_backward(
+                    self.get_messageset(old_sub['messageset'])['short_name'],
+                    old_sub['next_sequence_number']
+                )
+            except NoMappingFound as e:
+                raise InvalidRapidproContact(e.message)
+            messageset_id = self.get_messageset_by_shortname(messageset)['id']
+            new_subs.append(self.sbm_client.create_subscription({
+                'identity': seed_uuid,
+                'messageset': messageset_id,
+                'initial_sequence_number': sequence,
+                'next_sequence_number': sequence,
+                'lang': old_sub['lang'],
+                'schedule': self.get_messageset(
+                    messageset_id)['default_schedule'],
+            }))
 
         RevertedIdentity.objects.create(
             migrate_subscription=migration, identity_uuid=seed_uuid)
 
         return Response({
             'cancelled_subscriptions': existing_subs,
-            'created_subscription': new_sub,
+            'created_subscriptions': new_subs,
         })
