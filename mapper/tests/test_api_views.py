@@ -306,7 +306,6 @@ class TestRapidproOptoutView(TestCase):
         r = self.client.post(reverse('api:rapidpro-optout-list'), data={
             'contact': uuid_rapidpro,
         })
-        print json.loads(r.content)
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.maxDiff = None
         self.assertEqual(
