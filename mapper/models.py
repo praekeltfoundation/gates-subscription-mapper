@@ -30,8 +30,6 @@ class MigrateSubscription(models.Model):
         default=STARTING)
     from_messageset = models.IntegerField(
         "ID of the messageset to transfer subscriptions from")
-    to_messageset = models.IntegerField(
-        "ID of the messageset to transfer subscriptions to")
     table_name = models.TextField("Database table for identity IDs")
     column_name = models.TextField("Column in table for identity IDs")
     # The total number gets filled inside the task, as a count could take
@@ -64,11 +62,11 @@ class MigrateSubscription(models.Model):
     def __str__(self):
         return (
             "{status} migrate {column} on {table} from message set {from_ms} "
-            "to {to_ms} with task {task}"
+            "with task {task}"
             .format(
                 status=self.get_status_display(), column=self.column_name,
                 table=self.table_name, from_ms=self.from_messageset,
-                to_ms=self.to_messageset, task=self.task_id)
+                task=self.task_id)
         )
 
 
