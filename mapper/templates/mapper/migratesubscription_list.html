@@ -27,7 +27,7 @@
                     <td>{{ migration.created_at | naturaltime }}</td>
                     <td>{% if migration.completed_at %}{{ migration.completed_at | naturaltime }}{% else %}-{% endif %}</td>
                     <td>{{ migration.column_name }} of {{ migration.table_name }}</td>
-                    <td>{{ messagesets|lookup:migration.from_messageset }} to {{ messagesets|lookup:migration.to_messageset }}</td>
+                    <td>{{ messagesets|lookup:migration.from_messageset }}</td>
                     <td>{{ migration.get_status_display }} {{ migration.current }}/{% if migration.total %}{{ migration.total }}{% else %}-{% endif %}</td>
                     <td>
                         {% if migration.can_be_resumed %}

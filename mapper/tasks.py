@@ -13,7 +13,7 @@ from seed_services_client.stage_based_messaging import (
 from uuid import uuid4
 
 from mapper.models import LogEvent, MigrateSubscription, MigratedIdentity
-from mapper.sequence_mapper import map_sequence
+from mapper.sequence_mapper import map_forward
 
 
 class MigrateSubscriptionsTask(Task):
@@ -113,22 +113,21 @@ class MigrateSubscriptionsTask(Task):
         for sub in existing_subs:
             self.sbm_client.update_subscription(
                 sub['id'], data={'active': False})
-
-        sequence_number = map_sequence(
-            self.get_messageset(migrate.from_messageset)['short_name'],
-            self.get_messageset(migrate.to_messageset)['short_name'],
-            sub['next_sequence_number'],
-        )
-
-        self.sbm_client.create_subscription({
-            'identity': identity,
-            'messageset': migrate.to_messageset,
-            'initial_sequence_number': sequence_number,
-            'next_sequence_number': sequence_number,
-            'lang': sub['lang'],
-            'schedule': self.get_messageset(
-                migrate.to_messageset)['default_schedule'],
-        })
+            (messageset, sequence) = map_forward(
+                self.get_messageset(migrate.from_messageset)['short_name'],
+                sub['next_sequence_number'],
+            )
+            messageset_id = self.sbm_client.get_messagesets(
+                params={'short_name': messageset})['results'][0]['id']
+            self.sbm_client.create_subscription({
+                'identity': identity,
+                'messageset': messageset_id,
+                'initial_sequence_number': sequence,
+                'next_sequence_number': sequence,
+                'lang': sub['lang'],
+                'schedule': self.get_messageset(
+                    messageset_id)['default_schedule'],
+            })
 
         MigratedIdentity.objects.create(
             migrate_subscription=migrate, identity_uuid=identity)
