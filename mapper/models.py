@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
 
 from django.db import models
 from django.utils.encoding import python_2_unicode_compatible
@@ -30,8 +30,6 @@ class MigrateSubscription(models.Model):
         default=STARTING)
     from_messageset = models.IntegerField(
         "ID of the messageset to transfer subscriptions from")
-    to_messageset = models.IntegerField(
-        "ID of the messageset to transfer subscriptions to")
     table_name = models.TextField("Database table for identity IDs")
     column_name = models.TextField("Column in table for identity IDs")
     # The total number gets filled inside the task, as a count could take
@@ -64,11 +62,11 @@ class MigrateSubscription(models.Model):
     def __str__(self):
         return (
             "{status} migrate {column} on {table} from message set {from_ms} "
-            "to {to_ms} with task {task}"
+            "with task {task}"
             .format(
                 status=self.get_status_display(), column=self.column_name,
                 table=self.table_name, from_ms=self.from_messageset,
-                to_ms=self.to_messageset, task=self.task_id)
+                task=self.task_id)
         )
 
 
@@ -100,3 +98,50 @@ class LogEvent(models.Model):
         return "{created_at} [{level}]: {message}".format(
             created_at=self.created_at, level=self.get_log_level_display(),
             message=self.message)
+
+
+@python_2_unicode_compatible
+class MigratedIdentity(models.Model):
+    """
+    Keeps track of each migrated identity, and on which migration run it was
+    migrated on.
+    """
+    migrate_subscription = models.ForeignKey(
+        MigrateSubscription, on_delete=models.CASCADE,
+        related_name='migrated_identities')
+    identity_uuid = models.UUIDField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['identity_uuid'])
+        ]
+        verbose_name_plural = "migrated identities"
+
+    def __str__(self):
+        return "Migrated {identity} on migration run {migrate}".format(
+            identity=str(self.identity_uuid),
+            migrate=self.migrate_subscription_id)
+
+
+@python_2_unicode_compatible
+class RevertedIdentity(models.Model):
+    """
+    Keeps track of each identity whose migration was reverted.
+    """
+    migrate_subscription = models.ForeignKey(
+        MigrateSubscription, on_delete=models.CASCADE,
+        related_name='reverted_identities')
+    identity_uuid = models.UUIDField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['identity_uuid'])
+        ]
+        verbose_name_plural = "reverted identities"
+
+    def __str__(self):
+        return "Reverted {identity} from migration run {migrate}".format(
+            identity=str(self.identity_uuid),
+            migrate=self.migrate_subscription_id)

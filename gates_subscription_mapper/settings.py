@@ -44,6 +44,8 @@ INSTALLED_APPS = [
     'django.contrib.humanize',
     # 3rd party
     'raven.contrib.django.raven_compat',
+    'rest_framework',
+    'rest_framework.authtoken',
     # us
     'mapper',
 ]
@@ -161,3 +163,9 @@ CELERY_WORKER_CONCURRENCY = int(os.environ.get(
     'CELERY_WORKER_CONCURRENCY', '1'))
 CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.environ.get(
     'CELERY_WORKER_PREFETCH_MULTIPLIER', '1'))
+
+# Rapidpro config
+RAPIDPRO_UUID_FIELD = os.environ.get(
+    'RAPIDPRO_UUID_FIELD', 'seed_identity_uuid')
+RAPIDPRO_URL = os.environ.get('RAPIDPRO_URL', 'http://localhost:8002/')
+RAPIDPRO_TOKEN = os.environ.get('RAPIDPRO_TOKEN', 'replace-me')

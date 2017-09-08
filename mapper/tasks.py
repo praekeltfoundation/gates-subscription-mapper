@@ -12,13 +12,16 @@ from seed_services_client.stage_based_messaging import (
     StageBasedMessagingApiClient)
 from uuid import uuid4
 
-from .models import LogEvent, MigrateSubscription
-from .sequence_mapper import map_sequence
+from mapper.models import LogEvent, MigrateSubscription, MigratedIdentity
+from mapper.sequence_mapper import map_forward
 
 
 class MigrateSubscriptionsTask(Task):
     CHUNK_SIZE = 1000
     logger = get_task_logger(__name__)
+    sbm_client = StageBasedMessagingApiClient(
+        settings.STAGE_BASED_MESSAGING_TOKEN,
+        settings.STAGE_BASED_MESSAGING_URL)
 
     def log(self, migrate, level, message):
         LogEvent.objects.create(
@@ -71,23 +74,11 @@ class MigrateSubscriptionsTask(Task):
                 for row in chunk:
                     yield row[0]
 
-    def _get_stage_based_messaging_client(self):
-        """
-        Get the cached stage based messaging client, or create and cache on the
-        instance.
-        """
-        if getattr(self, 'sbm_client', None) is None:
-            self.sbm_client = StageBasedMessagingApiClient(
-                settings.STAGE_BASED_MESSAGING_TOKEN,
-                settings.STAGE_BASED_MESSAGING_URL)
-        return self.sbm_client
-
     def get_messageset(self, messageset_id):
         if getattr(self, 'messagesets', None) is None:
             self.messagesets = {}
         if messageset_id not in self.messagesets:
-            client = self._get_stage_based_messaging_client()
-            self.messagesets[messageset_id] = client.get_messageset(
+            self.messagesets[messageset_id] = self.sbm_client.get_messageset(
                 messageset_id)
         return self.messagesets[messageset_id]
 
@@ -95,10 +86,10 @@ class MigrateSubscriptionsTask(Task):
         """
         Migrates an identity from one messageset to another.
         """
-        client = self._get_stage_based_messaging_client()
-        existing_subs = list(client.get_subscriptions({
+        existing_subs = list(self.sbm_client.get_subscriptions({
             'identity': identity,
             'messageset': migrate.from_messageset,
+            'active': True,
         })['results'])
         if len(existing_subs) == 0:
             self.log(
@@ -120,23 +111,26 @@ class MigrateSubscriptionsTask(Task):
             )
 
         for sub in existing_subs:
-            client.update_subscription(sub['id'], data={'active': False})
+            self.sbm_client.update_subscription(
+                sub['id'], data={'active': False})
+            (messageset, sequence) = map_forward(
+                self.get_messageset(migrate.from_messageset)['short_name'],
+                sub['next_sequence_number'],
+            )
+            messageset_id = self.sbm_client.get_messagesets(
+                params={'short_name': messageset})['results'][0]['id']
+            self.sbm_client.create_subscription({
+                'identity': identity,
+                'messageset': messageset_id,
+                'initial_sequence_number': sequence,
+                'next_sequence_number': sequence,
+                'lang': sub['lang'],
+                'schedule': self.get_messageset(
+                    messageset_id)['default_schedule'],
+            })
 
-        sequence_number = map_sequence(
-            self.get_messageset(migrate.from_messageset)['short_name'],
-            self.get_messageset(migrate.to_messageset)['short_name'],
-            sub['next_sequence_number'],
-        )
-
-        client.create_subscription({
-            'identity': identity,
-            'messageset': migrate.to_messageset,
-            'initial_sequence_number': sequence_number,
-            'next_sequence_number': sequence_number,
-            'lang': sub['lang'],
-            'schedule': self.get_messageset(
-                migrate.to_messageset)['default_schedule'],
-        })
+        MigratedIdentity.objects.create(
+            migrate_subscription=migrate, identity_uuid=identity)
 
     def run(self, migrate_subscription_id, **kwargs):
         migrate = MigrateSubscription.objects.get(pk=migrate_subscription_id)

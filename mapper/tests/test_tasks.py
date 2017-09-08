@@ -5,6 +5,7 @@ from django.db import connections
 from django.conf import settings
 from django.test import TestCase
 from testfixtures import LogCapture
+from uuid import uuid4
 import json
 import responses
 import logging
@@ -13,11 +14,11 @@ try:
 except ImportError:
     import unittest.mock as mock
 
-from mapper.models import LogEvent, MigrateSubscription
+from mapper.models import LogEvent, MigratedIdentity, MigrateSubscription
 from mapper.tasks import migrate_subscriptions
 from mapper.test_utils import (
     get_calls_to_url, mock_create_subscription, mock_get_subscriptions,
-    mock_get_messageset, mock_update_subscription)
+    mock_get_messageset, mock_update_subscription, mock_get_messagesets)
 
 
 class MigrateSubscriptionsTaskTest(TestCase):
@@ -29,7 +30,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         log the message normally.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
         with LogCapture() as l:
@@ -49,7 +50,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         that we want to migrate.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
 
@@ -68,7 +69,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         specified field in the specified table.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
         with connections['identities'].cursor() as cursor:
@@ -98,7 +99,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         the identities that haven't yet been processed
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1', current=10,
         )
         with connections['identities'].cursor() as cursor:
@@ -121,7 +122,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         parameters.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
 
@@ -152,7 +153,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         the status to error.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
 
@@ -179,7 +180,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         the status to error.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
 
@@ -205,7 +206,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         then we should not take any actions.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
             status=MigrateSubscription.CANCELLED)
 
@@ -226,7 +227,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         task.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1')
 
         count_identities.return_value = 2
@@ -262,7 +263,7 @@ class MigrateSubscriptionsTaskTest(TestCase):
         we should stop running the task.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1')
 
         count_identities.return_value = 1
@@ -297,9 +298,10 @@ class MigrateSubscriptionsTaskTest(TestCase):
         message should be created.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table', column_name='column')
-        mock_get_subscriptions([], '?messageset=1&identity=test-identity')
+        mock_get_subscriptions(
+            [], '?messageset=1&identity=test-identity&active=True')
         # To get the messageset name for the log entry
         mock_get_messageset(1, {'short_name': 'from_messageset'})
 
@@ -313,34 +315,44 @@ class MigrateSubscriptionsTaskTest(TestCase):
             'from_messageset. Not migrating identity.')
 
     @responses.activate
-    def test_migrate_identity_multiple_subscriptions(self):
+    @mock.patch('mapper.tasks.map_forward')
+    def test_migrate_identity_multiple_subscriptions(self, map_forward):
         """
         If an identity has multiple subscriptions to the specified from
         messageset, then a warning should be logged, and all of those
-        messagesets should be disabled.
+        messagesets should be disabled. A MigratedIdentity object should also
+        be created.
         """
+        def new_map_forward(messageset, sequence):
+            return messageset, sequence
+        map_forward.side_effect = new_map_forward
+        uuid = str(uuid4())
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table', column_name='column')
         mock_get_subscriptions(
             [{'id': 1, 'next_sequence_number': 1, 'lang': 'afr'},
              {'id': 2, 'next_sequence_number': 2, 'lang': 'eng'}],
-            '?messageset=1&identity=test-identity')
+            '?messageset=1&identity={}&active=True'.format(uuid))
         mock_update_subscription(1)
         mock_update_subscription(2)
         # To get the messageset name for the log entry + mapping
-        mock_get_messageset(1, {'short_name': 'from_messageset'})
-        mock_get_messageset(2, {
-            'short_name': 'to_messageset', 'default_schedule': 4})
+        messagesets = [
+            {'short_name': 'from_messageset', 'default_schedule': 4, 'id': 1},
+            {'short_name': 'to_messageset', 'default_schedule': 4, 'id': 2},
+        ]
+        mock_get_messageset(1, messagesets[0])
+        mock_get_messageset(2, messagesets[1])
+        mock_get_messagesets(messagesets[1:2], '?short_name=from_messageset')
         mock_create_subscription()
 
-        migrate_subscriptions.migrate_identity(migrate, 'test-identity')
+        migrate_subscriptions.migrate_identity(migrate, uuid)
 
         log = LogEvent.objects.last()
         self.assertEqual(log.log_level, logging.WARNING)
         self.assertEqual(
-            log.message, 'Identity test-identity has 2 subscriptions to '
-            'from_messageset. All will be cancelled.')
+            log.message, 'Identity {} has 2 subscriptions to from_messageset. '
+            'All will be cancelled.'.format(uuid))
 
         [cancel_sub1] = list(get_calls_to_url(
             '{url}/subscriptions/{subscription_id}/'.format(
@@ -356,27 +368,40 @@ class MigrateSubscriptionsTaskTest(TestCase):
         self.assertEqual(
             json.loads(cancel_sub2.request.body), {'active': False})
 
+        [migrated_identity] = MigratedIdentity.objects.all()
+        self.assertEqual(migrated_identity.migrate_subscription, migrate)
+        self.assertEqual(str(migrated_identity.identity_uuid), uuid)
+
     @responses.activate
-    def test_migrate_identity_single_subscription(self):
+    @mock.patch('mapper.tasks.map_forward')
+    def test_migrate_identity_single_subscription(self, map_forward):
         """
         If the identity has a single subscription to the from messageset, then
         that should be cancelled, and a new subscription should be created
-        for the to messageset.
+        for the to messageset. A MigratedIdentity object should also be created
         """
+        def new_map_forward(messageset, sequence):
+            return messageset, sequence
+        map_forward.side_effect = new_map_forward
+        uuid = str(uuid4())
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table', column_name='column')
         mock_get_subscriptions(
             [{'id': 1, 'next_sequence_number': 5, 'lang': 'eng'}],
-            '?messageset=1&identity=test-identity')
+            '?messageset=1&identity={}&active=True'.format(uuid))
         mock_update_subscription(1)
         # To get the messageset name for the log entry + mapping
-        mock_get_messageset(1, {'short_name': 'from_messageset'})
-        mock_get_messageset(2, {
-            'short_name': 'to_messageset', 'default_schedule': 4})
+        messagesets = [
+            {'short_name': 'from_messageset', 'default_schedule': 4, 'id': 1},
+            {'short_name': 'to_messageset', 'default_schedule': 4, 'id': 2},
+        ]
+        mock_get_messageset(1, messagesets[0])
+        mock_get_messageset(2, messagesets[1])
+        mock_get_messagesets(messagesets[1:2], '?short_name=from_messageset')
         mock_create_subscription()
 
-        migrate_subscriptions.migrate_identity(migrate, 'test-identity')
+        migrate_subscriptions.migrate_identity(migrate, uuid)
 
         self.assertEqual(LogEvent.objects.count(), 0)
 
@@ -392,10 +417,14 @@ class MigrateSubscriptionsTaskTest(TestCase):
                 url=settings.STAGE_BASED_MESSAGING_URL, subscription_id=1)))
         self.assertEqual(create_sub.request.method, responses.POST)
         self.assertEqual(json.loads(create_sub.request.body), {
-            'identity': 'test-identity',
+            'identity': uuid,
             'initial_sequence_number': 5,
             'next_sequence_number': 5,
             'lang': 'eng',
             'messageset': 2,
             'schedule': 4,
         })
+
+        [migrated_identity] = MigratedIdentity.objects.all()
+        self.assertEqual(migrated_identity.migrate_subscription, migrate)
+        self.assertEqual(str(migrated_identity.identity_uuid), uuid)

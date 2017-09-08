@@ -13,7 +13,7 @@ class LogEventModelTests(TestCase):
         Test that the string value of a log event is generate correctly.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
         l = LogEvent.objects.create(

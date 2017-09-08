@@ -86,7 +86,6 @@ class MigrationSubscriptionsListViewTests(TestCase):
             task_id='test-task-id',
             status=MigrateSubscription.RUNNING,
             from_messageset=1,
-            to_messageset=2,
             table_name='test-table',
             column_name='test-column',
             total=123,
@@ -107,9 +106,7 @@ class MigrationSubscriptionsListViewTests(TestCase):
             html=True)
         self.assertContains(
             response,
-            '<td>{} to {}</td>'.format(
-                messagesets[m.from_messageset], messagesets[m.to_messageset]),
-            html=True)
+            '<td>{}</td>'.format(messagesets[m.from_messageset]),  html=True)
         self.assertContains(
             response, '<td>{} {}/{}</td>'.format(
                 m.get_status_display(), m.current, m.total),
@@ -135,7 +132,6 @@ class MigrationSubscriptionsListViewTests(TestCase):
                 task_id='test-task-id-{}'.format(i),
                 status=MigrateSubscription.RUNNING,
                 from_messageset=1,
-                to_messageset=2,
                 table_name='test-table',
                 column_name='test-column',
                 total=123,
@@ -158,7 +154,7 @@ class MigrationSubscriptionsListViewTests(TestCase):
         should be a retry button.
         """
         m = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='test-table', column_name='test-column',
         )
         mock_get_messagesets([])
@@ -187,7 +183,7 @@ class MigrationSubscriptionsListViewTests(TestCase):
         button.
         """
         m = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='test-table', column_name='test-column',
             status=MigrateSubscription.ERROR)
         mock_get_messagesets([])
@@ -235,11 +231,6 @@ class CreateSubscriptionMigrationFormTests(TestCase):
         self.assertContains(
             response,
             '<select name="from_messageset" id="id_from_messageset">'
-            '{}</select>'.format(messagesets),
-            html=True)
-        self.assertContains(
-            response,
-            '<select name="to_messageset" id="id_to_messageset">'
             '{}</select>'.format(messagesets),
             html=True)
 
@@ -333,7 +324,6 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             'table_name': 'testtable1',
             'column_name': tables['testtable2'][0],
             'from_messageset': 1,
-            'to_messageset': 2,
         })
         self.assertContains(
             response,
@@ -375,7 +365,6 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             'table_name': 'testtable1',
             'column_name': tables['testtable1'][0],
             'from_messageset': 1,
-            'to_messageset': 2,
         })
         self.assertRedirects(response, reverse('migration-list'))
 
@@ -384,7 +373,6 @@ class CreateSubscriptionMigrationFormTests(TestCase):
         self.assertEqual(migration.table_name, 'testtable1')
         self.assertEqual(migration.column_name, tables['testtable1'][0])
         self.assertEqual(migration.from_messageset, 1)
-        self.assertEqual(migration.to_messageset, 2)
 
         # Test object history is created correctly
         [history] = LogEntry.objects.filter(object_id=migration.pk)
@@ -406,7 +394,7 @@ class TestLogListView(TestCase):
         You need to be logged in to be able to view the list of logs.
         """
         migrate1 = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
         url = reverse('log-list', kwargs={'migration_id': migrate1.pk})
@@ -426,11 +414,11 @@ class TestLogListView(TestCase):
         shown.
         """
         migrate1 = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
         migrate2 = MigrateSubscription.objects.create(
-            from_messageset=3, to_messageset=3,
+            from_messageset=3,
             table_name='table2', column_name='column2',
         )
         log1 = LogEvent.objects.create(
@@ -452,7 +440,7 @@ class TestLogListView(TestCase):
         Test that the correct information for the logs are shown.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
         log = LogEvent.objects.create(
@@ -472,7 +460,7 @@ class TestLogListView(TestCase):
         If there are next and previous pages, both links should be shown.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
         self.client.force_login(User.objects.create_user('testuser'))
@@ -531,7 +519,7 @@ class TestRetrySubscriptionMigrate(TestCase):
         a bad request error should be returned.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
         )
         self.client.force_login(User.objects.create_user('testuser'))
@@ -549,7 +537,7 @@ class TestRetrySubscriptionMigrate(TestCase):
         """
         mock_get_messagesets([])
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
             status=MigrateSubscription.ERROR,
         )
@@ -607,7 +595,7 @@ class TestCancelSubscriptionMigrate(TestCase):
         cancel it, so a bad request error should be returned.
         """
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
             status=MigrateSubscription.ERROR,
         )
@@ -625,7 +613,7 @@ class TestCancelSubscriptionMigrate(TestCase):
         """
         mock_get_messagesets([])
         migrate = MigrateSubscription.objects.create(
-            from_messageset=1, to_messageset=2,
+            from_messageset=1,
             table_name='table1', column_name='column1',
             status=MigrateSubscription.RUNNING,
         )

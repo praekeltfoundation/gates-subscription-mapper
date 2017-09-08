@@ -8,14 +8,12 @@ from .models import MigrateSubscription
 
 class MigrateSubscriptionForm(forms.ModelForm):
     from_messageset = forms.ChoiceField()
-    to_messageset = forms.ChoiceField()
     table_name = forms.ChoiceField()
     column_name = forms.ChoiceField()
 
     def __init__(self, messagesets, db_info, *args, **kwargs):
         super(MigrateSubscriptionForm, self).__init__(*args, **kwargs)
         self.fields['from_messageset'].choices = messagesets
-        self.fields['to_messageset'].choices = messagesets
 
         self.db_info = db_info
         self.fields['table_name'].choices = sorted(
@@ -39,4 +37,4 @@ class MigrateSubscriptionForm(forms.ModelForm):
     class Meta:
         model = MigrateSubscription
         fields = (
-            'from_messageset', 'to_messageset', 'table_name', 'column_name')
+            'from_messageset', 'table_name', 'column_name')
