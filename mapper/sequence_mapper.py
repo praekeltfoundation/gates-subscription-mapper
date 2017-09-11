@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
+from math import ceil
 
 
 class NoMappingFound(Exception):
@@ -13,12 +14,27 @@ class SequenceMapper(object):
     """
     Provides the logic for mapping from one message set to another.
     """
+    def map_test_messageset_1(self, sequence):
+        """
+        Maps from the first testing messageset to the second testing
+        messageset.
+        """
+        return 'test.messageset.2', 9 + 2 * sequence
+
+    def map_test_messageset_2(self, sequence):
+        """
+        Maps from the second testing messageset back to the first.
+        """
+        return 'test.messageset.1', max(0, int(ceil((sequence - 9) / 2.0)))
+
     def map_forward(self, messageset, sequence):
         """
         Given the short_name of the messageset, and the current sequence number
         returns the tuple (messageset, sequence) of the mapped messageset and
         sequence.
         """
+        if messageset == 'test.messageset.1':
+            return self.map_test_messageset_1(sequence)
         # If we cannot find any mapping, raise the exception
         raise NoMappingFound(
             "No mapping can be found for messageset {messageset} and sequence "
@@ -30,6 +46,8 @@ class SequenceMapper(object):
         returns the tuple (messageset, sequence) of the mapped messageset and
         sequence.
         """
+        if messageset == 'test.messageset.2':
+            return self.map_test_messageset_2(sequence)
         # If we cannot find any mapping, raise the exception
         raise NoMappingFound(
             "No mapping can be found for messageset {messageset} and sequence "
