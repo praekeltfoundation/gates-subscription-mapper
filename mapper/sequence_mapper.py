@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
-from math import ceil
+from math import floor
 
 
 class NoMappingFound(Exception):
@@ -19,13 +19,13 @@ class SequenceMapper(object):
         Maps from the first testing messageset to the second testing
         messageset.
         """
-        return 'test.messageset.2', 9 + 2 * sequence
+        return 'test.messageset.2', max(0, 2 * sequence - 1)
 
     def map_test_messageset_2(self, sequence):
         """
         Maps from the second testing messageset back to the first.
         """
-        return 'test.messageset.1', max(0, int(ceil((sequence - 9) / 2.0)))
+        return 'test.messageset.1', int(floor(sequence / 2.0) + 1)
 
     def map_forward(self, messageset, sequence):
         """
