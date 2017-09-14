@@ -147,7 +147,7 @@ class MigrateSubscriptionsTask(Task):
             return
         self.log(
             migrate, INFO,
-            "Set task ID to {task_id}".format(task_id=migrate.task_id))
+            "Set task ID to {task_id}".format(task_id=self.request.id))
 
         self.log(migrate, INFO, "Counting identities")
         migrate.total = self.count_identities(migrate)
@@ -170,10 +170,11 @@ class MigrateSubscriptionsTask(Task):
 
         # Atomically transision to complete state, stopping the task if it
         # is not in the running status
+        timestamp = timezone.now()
         num = MigrateSubscription.objects.filter(
             pk=migrate_subscription_id, status=MigrateSubscription.RUNNING
             ).update(
-                completed_at=timezone.now(),
+                completed_at=timestamp,
                 status=MigrateSubscription.COMPLETE)
         if num != 1:
             self.log(migrate, INFO, "Stopping task run")
@@ -181,7 +182,7 @@ class MigrateSubscriptionsTask(Task):
         self.log(
             migrate, INFO,
             "Completed processing identities at {timestamp}".format(
-                timestamp=migrate.completed_at))
+                timestamp=timestamp))
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         if 'migrate_subscription_id' in kwargs:
