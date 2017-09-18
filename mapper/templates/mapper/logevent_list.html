@@ -13,7 +13,7 @@
         <tr>
             <td class="mdl-data-table__cell--non-numeric">{{ log.created_at | naturaltime }}</td>
             <td class="mdl-data-table__cell--non-numeric">{{ log.get_log_level_display }}</td>
-            <td class="mdl-data-table__cell--non-numeric">{{ log.message | linebreaks }}</td>
+            <td class="mdl-data-table__cell--non-numeric">{{ log.message | linebreaksbr }}</td>
         </tr>
     {% endfor %}
 </table>
