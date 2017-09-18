@@ -1,0 +1,13 @@
+
+<a href="{% url 'migration-list' %}" class="mdl-navigation__link"><span class="mdl-layout__title">Gates Subscription Mapper</span></a>
+{% if not drawer %}
+<div class="mdl-layout-spacer"></div>
+{% endif %}
+<nav class="mdl-navigation">
+{% if user.is_staff %}
+    <a class="mdl-navigation__link" href="{% url 'admin:index' %}">Admin</a>
+{% endif %}
+{% if user.is_authenticated %}
+    <a class="mdl-navigation__link" href="{% url 'logout'%}">Logout</a>
+{% endif %}
+</nav>
