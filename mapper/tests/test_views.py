@@ -502,7 +502,6 @@ class TestLogListView(TestCase):
 
         response = self.client.get('{}?page=2'.format(url))
 
-        print response.content
         self.assertContains(
             response, expected_older.format(1), html=True)
         self.assertContains(
