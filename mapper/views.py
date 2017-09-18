@@ -28,7 +28,7 @@ class MigrateSubscriptionListView(
     model = MigrateSubscription
     form_class = MigrateSubscriptionForm
     success_url = reverse_lazy('migration-list')
-    paginate_by = 20
+    paginate_by = 5
 
     def get_messagesets(self):
         """
@@ -232,7 +232,7 @@ class CancelSubscriptionView(LoginRequiredMixin, View):
 
 class LogListView(LoginRequiredMixin, ListView):
     model = LogEvent
-    paginate_by = 20
+    paginate_by = 10
 
     def get_queryset(self):
         self.migrate_subscription = get_object_or_404(
