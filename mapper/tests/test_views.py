@@ -27,30 +27,30 @@ class TestBaseTemplate(TestCase):
         """
         If the user is logged in, there should be a logout link.
         """
+        expected = '<a class="mdl-navigation__link" href="{}">Logout</a>'\
+            .format(reverse('logout'))
         response = self.client.get(reverse('login'))
-        self.assertNotContains(
-            response, '<a href="{}">Logout</a>'.format(reverse('logout')))
+        self.assertNotContains(response, expected, html=True)
 
         self.client.force_login(User.objects.create_user('testuser'))
         response = self.client.get(reverse('login'))
-        self.assertContains(
-            response, '<a href="{}">Logout</a>'.format(reverse('logout')))
+        self.assertContains(response, expected, html=True)
 
     def test_admin_link(self):
         """
         If the user has access to the django admin, there should be a link
         to the django admin.
         """
+        expected = '<a class="mdl-navigation__link" href="{}">Admin</a>'\
+            .format(reverse('admin:index'))
         self.client.force_login(User.objects.create_user('testuser'))
         response = self.client.get(reverse('login'))
-        self.assertNotContains(
-            response, '<a href="{}">Admin</a>'.format(reverse('admin:index')))
+        self.assertNotContains(response, expected, html=True)
 
         self.client.force_login(User.objects.create_superuser(
             'testadmin', 'testadmin@example.org', 'testpass'))
         response = self.client.get(reverse('login'))
-        self.assertContains(
-            response, '<a href="{}">Admin</a>'.format(reverse('admin:index')))
+        self.assertContains(response, expected, html=True)
 
 
 class MigrationSubscriptionsListViewTests(TestCase):
@@ -95,21 +95,23 @@ class MigrationSubscriptionsListViewTests(TestCase):
 
         response = self.client.get(reverse('migration-list'))
 
+        td = '<td class="mdl-data-table__cell--non-numeric">'
         self.assertContains(
-            response, '<td>{}</td>'.format(naturaltime(m.created_at)),
+            response, '{}{}</td>'.format(td, naturaltime(m.created_at)),
             html=True)
         self.assertContains(
-            response, '<td>{}</td>'.format(naturaltime(m.completed_at)),
+            response, '{}{}</td>'.format(td, naturaltime(m.completed_at)),
             html=True)
         self.assertContains(
-            response, '<td>{} of {}</td>'.format(m.column_name, m.table_name),
+            response, '{}{} of {}</td>'.format(
+                td, m.column_name, m.table_name),
             html=True)
         self.assertContains(
             response,
-            '<td>{}</td>'.format(messagesets[m.from_messageset]),  html=True)
+            '{}{}</td>'.format(td, messagesets[m.from_messageset]),  html=True)
         self.assertContains(
-            response, '<td>{} {}/{}</td>'.format(
-                m.get_status_display(), m.current, m.total),
+            response, '{}{} {}/{}</td>'.format(
+                td, m.get_status_display(), m.current, m.total),
             html=True)
 
     @responses.activate
@@ -117,14 +119,22 @@ class MigrationSubscriptionsListViewTests(TestCase):
         """
         If there are next and previous pages, both links should be shown.
         """
+        expected_newer = (
+            '<a class="mdl-button mdl-js-button mdl-js-ripple-effect" '
+            'href="?page={}">newer<i class="material-icons">'
+            'keyboard_arrow_right</i></a>')
+        expected_older = (
+            '<a class="mdl-button mdl-js-button mdl-js-ripple-effect" '
+            'href="?page={}"><i class="material-icons">keyboard_arrow_left'
+            '</i>older</a>')
         mock_get_messagesets([])
         self.client.force_login(User.objects.create_user('testuser'))
 
         response = self.client.get(reverse('migration-list'))
         self.assertNotContains(
-            response, '<a href="?page=0">newer</a>', html=True)
+            response, expected_newer.format(0), html=True)
         self.assertNotContains(
-            response, '<a href="?page=2">older</a>', html=True)
+            response, expected_older.format(2), html=True)
 
         # Create 3 pages
         for i in range(3 * 20):
@@ -143,9 +153,9 @@ class MigrationSubscriptionsListViewTests(TestCase):
             '{}?page=2'.format(reverse('migration-list')))
 
         self.assertContains(
-            response, '<a href="?page=1">newer</a>', html=True)
+            response, expected_newer.format(1), html=True)
         self.assertContains(
-            response, '<a href="?page=3">older</a>', html=True)
+            response, expected_older.format(3), html=True)
 
     @responses.activate
     def test_retry_button(self):
@@ -153,6 +163,11 @@ class MigrationSubscriptionsListViewTests(TestCase):
         If a listed migration is in the error or cancelled state, then there
         should be a retry button.
         """
+        expected = (
+            '<button class="mdl-button mdl-js-button mdl-button--colored '
+            'mdl-button--raised mdl-js-ripple-effect" type="submit">Retry'
+            '</button>'
+        )
         m = MigrateSubscription.objects.create(
             from_messageset=1,
             table_name='test-table', column_name='test-column',
@@ -161,20 +176,17 @@ class MigrationSubscriptionsListViewTests(TestCase):
         self.client.force_login(User.objects.create_user('testuser'))
 
         response = self.client.get(reverse('migration-list'))
-        self.assertNotContains(
-            response, '<button type="submit">Retry</button>', html=True)
+        self.assertNotContains(response, expected, html=True)
 
         m.status = MigrateSubscription.ERROR
         m.save()
         response = self.client.get(reverse('migration-list'))
-        self.assertContains(
-            response, '<button type="submit">Retry</button>', html=True)
+        self.assertContains(response, expected, html=True)
 
         m.status = MigrateSubscription.CANCELLED
         m.save()
         response = self.client.get(reverse('migration-list'))
-        self.assertContains(
-            response, '<button type="submit">Retry</button>', html=True)
+        self.assertContains(response, expected, html=True)
 
     @responses.activate
     def test_cancel_button(self):
@@ -182,6 +194,11 @@ class MigrationSubscriptionsListViewTests(TestCase):
         If a listed migration can be cancelled, then there should be a cancel
         button.
         """
+        expected = (
+            '<button class="mdl-button mdl-js-button mdl-button--colored '
+            'mdl-button--raised mdl-js-ripple-effect" type="submit">Cancel'
+            '</button>'
+        )
         m = MigrateSubscription.objects.create(
             from_messageset=1,
             table_name='test-table', column_name='test-column',
@@ -190,20 +207,17 @@ class MigrationSubscriptionsListViewTests(TestCase):
         self.client.force_login(User.objects.create_user('testuser'))
 
         response = self.client.get(reverse('migration-list'))
-        self.assertNotContains(
-            response, '<button type="submit">Cancel</button>', html=True)
+        self.assertNotContains(response, expected, html=True)
 
         m.status = MigrateSubscription.STARTING
         m.save()
         response = self.client.get(reverse('migration-list'))
-        self.assertContains(
-            response, '<button type="submit">Cancel</button>', html=True)
+        self.assertContains(response, expected, html=True)
 
         m.status = MigrateSubscription.RUNNING
         m.save()
         response = self.client.get(reverse('migration-list'))
-        self.assertContains(
-            response, '<button type="submit">Cancel</button>', html=True)
+        self.assertContains(response, expected, html=True)
 
 
 class CreateSubscriptionMigrationFormTests(TestCase):
@@ -230,8 +244,8 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             for k, v in messagesets.items()])
         self.assertContains(
             response,
-            '<select name="from_messageset" id="id_from_messageset">'
-            '{}</select>'.format(messagesets),
+            '<select name="from_messageset" id="id_from_messageset" '
+            'class="mdl-textfield__input">{}</select>'.format(messagesets),
             html=True)
 
     @responses.activate
@@ -257,8 +271,8 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             '<option value="{0}">{0}</option>'.format(t) for t in tables])
         self.assertContains(
             response,
-            '<select name="table_name" id="id_table_name">'
-            '{}</select>'.format(tables),
+            '<select name="table_name" id="id_table_name" '
+            'class="mdl-textfield__input">{}</select>'.format(tables),
             html=True)
 
     @responses.activate
@@ -289,8 +303,8 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             for c in sorted(sum(tables.values(), []))])
         self.assertContains(
             response,
-            '<select name="column_name" id="id_column_name">'
-            '{}</select>'.format(columns),
+            '<select name="column_name" id="id_column_name" '
+            'class="mdl-textfield__input">{}</select>'.format(columns),
             html=True)
 
     @responses.activate
@@ -325,11 +339,10 @@ class CreateSubscriptionMigrationFormTests(TestCase):
             'column_name': tables['testtable2'][0],
             'from_messageset': 1,
         })
-        self.assertContains(
-            response,
-            '<ul class="errorlist"><li>Column {} is not a column in {}'
-            '</li></ul>'.format(tables['testtable2'][0], 'testtable1'),
-            html=True)
+        expected = (
+            '<span class="mdl-textfield__error">Column {} is not a column in '
+            '{}</span>').format(tables['testtable2'][0], 'testtable1')
+        self.assertContains(response, expected, html=True)
 
     @responses.activate
     @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
@@ -459,6 +472,14 @@ class TestLogListView(TestCase):
         """
         If there are next and previous pages, both links should be shown.
         """
+        expected_newer = (
+            '<a class="mdl-button mdl-js-button mdl-js-ripple-effect" '
+            'href="?page={}"><i class="material-icons">'
+            'keyboard_arrow_right</i>newer</a>')
+        expected_older = (
+            '<a class="mdl-button mdl-js-button mdl-js-ripple-effect" '
+            'href="?page={}">older<i class="material-icons">'
+            'keyboard_arrow_left</i></a>')
         migrate = MigrateSubscription.objects.create(
             from_messageset=1,
             table_name='table1', column_name='column1',
@@ -469,9 +490,9 @@ class TestLogListView(TestCase):
             'log-list', kwargs={'migration_id': migrate.pk}))
 
         self.assertNotContains(
-            response, '<a href="?page=0">older</a>', html=True)
+            response, expected_older.format(0), html=True)
         self.assertNotContains(
-            response, '<a href="?page=2">newer</a>', html=True)
+            response, expected_newer.format(2), html=True)
 
         # Create 3 pages
         for i in range(3 * 20):
@@ -481,10 +502,11 @@ class TestLogListView(TestCase):
 
         response = self.client.get('{}?page=2'.format(url))
 
+        print response.content
         self.assertContains(
-            response, '<a href="?page=1">older</a>', html=True)
+            response, expected_older.format(1), html=True)
         self.assertContains(
-            response, '<a href="?page=3">newer</a>', html=True)
+            response, expected_newer.format(3), html=True)
 
 
 class TestRetrySubscriptionMigrate(TestCase):

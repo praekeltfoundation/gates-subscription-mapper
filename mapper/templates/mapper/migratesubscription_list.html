@@ -24,7 +24,7 @@
                         {{ field|add_class:"mdl-textfield__input" }}
                         <label class="mdl-textfield__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                         {% for error in field.errors  %}
-                        <span class="mdl-textfield__error">{{ error|escape }}</p>
+                        <span class="mdl-textfield__error">{{ error|escape }}</span>
                         {% endfor %}
                     </div>
                     {% endfor %}
@@ -35,8 +35,8 @@
             </form>
         </div>
     </div>
+    {% if migratesubscription_list %}
     <div class="mdl-cell mdl-cell--8-col">
-        {% if migratesubscription_list %}
         <table class="mdl-data-table mdl-js-data-table">
             <tr>
                 <th class="mdl-data-table__cell--non-numeric">Started</th>
