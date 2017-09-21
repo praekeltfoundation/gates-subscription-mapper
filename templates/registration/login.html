@@ -1,12 +1,33 @@
 {% extends 'base.html' %}
+{% load widget_tweaks %}
 
-{% block title %}Login{% endblock %}
 
 {% block content %}
-    <h2>Login</h2>
+<div class="mdl-card">
+    <div class="mdl-card__title mdl-color--primary">
+        <h1 class="mdl-card__title-text">Login</h1>
+    </div>
     <form method="post">
         {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit">Login</button>
+        <div class="mdl-card__supporting-text">
+
+            {% for error in form.non_field_errors  %}
+            <p class="mdl-color-text--accent">{{ error|escape }}</p>
+            {% endfor %}
+
+            {% for field in form %}
+            <div class="mdl-textfield mdl-js-textfield">
+                {{ field|add_class:"mdl-textfield__input" }}
+                <label class="mdl-textfield__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {% for error in field.errors  %}
+                <span class="mdl-textfield__error">{{ error|escape }}</p>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+        <div class="mdl-card__actions">
+            <button class="mdl-button mdl-js-button mdl-button--colored mdl-button--raised" type="submit">Login</button>
+        </div>
     </form>
+</div>
 {% endblock %}

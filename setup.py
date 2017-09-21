@@ -44,6 +44,7 @@ setup(
         'celery==4.1.0',
         'djangorestframework==3.6.4',
         'rapidpro-python==2.1.8',
+        'django-widget-tweaks==1.4.1',
     ],
     classifiers=[
         'Development Status :: 4 - Beta',

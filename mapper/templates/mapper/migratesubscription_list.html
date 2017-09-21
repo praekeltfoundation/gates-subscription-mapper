@@ -1,66 +1,86 @@
 {% extends 'base.html' %}
+{% load widget_tweaks %}
 
 {% load humanize %}
 {% load mapper_tags %}
 
-{% block title %}Gates Subscription Mapper{% endblock %}
-
 {% block content %}
-<form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Create task</button>
-</form>
-{% if migratesubscription_list %}
-    <div class="model-list">
-        <table>
+<div class="mdl-grid">
+    <div class="mdl-cell mdl-cell--4-col">
+        <div class="mdl-card mdl-shadow--6dp">
+            <div class="mdl-card__title">
+                <h1 class="mdl-card__title-text">Create Migration</h1>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <div class="mdl-card__supporting-text">
+
+                    {% for error in form.non_field_errors  %}
+                    <p class="mdl-color-text--accent">{{ error|escape }}</p>
+                    {% endfor %}
+
+                    {% for field in form %}
+                    <div class="mdl-textfield mdl-js-textfield">
+                        {{ field|add_class:"mdl-textfield__input" }}
+                        <label class="mdl-textfield__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {% for error in field.errors  %}
+                        <span class="mdl-textfield__error">{{ error|escape }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="mdl-card__actions">
+                    <button class="mdl-button mdl-js-button mdl-button--colored mdl-js-ripple-effect" type="submit">Submit</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% if migratesubscription_list %}
+    <div class="mdl-cell mdl-cell--8-col">
+        <table class="mdl-data-table mdl-js-data-table">
             <tr>
-                <th>Started</th>
-                <th>Ended</th>
-                <th>Source</th>
-                <th>Transform</th>
-                <th>Status</th>
+                <th class="mdl-data-table__cell--non-numeric">Started</th>
+                <th class="mdl-data-table__cell--non-numeric">Ended</th>
+                <th class="mdl-data-table__cell--non-numeric">Source</th>
+                <th class="mdl-data-table__cell--non-numeric">Transform</th>
+                <th class="mdl-data-table__cell--non-numeric">Status</th>
                 <th></th>
             </tr>
             {% for migration in migratesubscription_list %}
                 <tr>
-                    <td>{{ migration.created_at | naturaltime }}</td>
-                    <td>{% if migration.completed_at %}{{ migration.completed_at | naturaltime }}{% else %}-{% endif %}</td>
-                    <td>{{ migration.column_name }} of {{ migration.table_name }}</td>
-                    <td>{{ messagesets|lookup:migration.from_messageset }}</td>
-                    <td>{{ migration.get_status_display }} {{ migration.current }}/{% if migration.total %}{{ migration.total }}{% else %}-{% endif %}</td>
+                    <td class="mdl-data-table__cell--non-numeric">{{ migration.created_at | naturaltime }}</td>
+                    <td class="mdl-data-table__cell--non-numeric">{% if migration.completed_at %}{{ migration.completed_at | naturaltime }}{% else %}-{% endif %}</td>
+                    <td class="mdl-data-table__cell--non-numeric">{{ migration.column_name }} of {{ migration.table_name }}</td>
+                    <td class="mdl-data-table__cell--non-numeric">{{ messagesets|lookup:migration.from_messageset }}</td>
+                    <td class="mdl-data-table__cell--non-numeric">{{ migration.get_status_display }} {{ migration.current }}/{% if migration.total %}{{ migration.total }}{% else %}-{% endif %}</td>
                     <td>
                         {% if migration.can_be_resumed %}
                         <form action="{% url 'migration-retry' migration_id=migration.pk %}" method="post">
                             {% csrf_token %}
-                            <button type="submit">Retry</button>
+                            <button class="mdl-button mdl-js-button mdl-button--colored mdl-button--raised mdl-js-ripple-effect" type="submit">Retry</button>
                         </form>
                         {% endif %}
                         {% if migration.can_be_cancelled %}
                         <form action="{% url 'migration-cancel' migration_id=migration.pk %}" method="post">
                             {% csrf_token %}
-                            <button type="submit">Cancel</button>
+                            <button class="mdl-button mdl-js-button mdl-button--colored mdl-button--raised mdl-js-ripple-effect" type="submit">Cancel</button>
                         </form>
                         {% endif %}
-                        <a href="{% url 'log-list' migration_id=migration.pk %}">Logs</a>
+                        <a class="mdl-button mdl-js-button mdl-button--colored mdl-js-ripple-effect" href="{% url 'log-list' migration_id=migration.pk %}">Logs</a>
                     </td>
                 </tr>
             {% endfor %}
         </table>
-    </div>
-    {% if is_paginated %}
+        {% if is_paginated %}
         <div class="pagination">
-            <span class="page-next">
-                {% if page_obj.has_next %}
-                    <a href="?page={{ page_obj.next_page_number }}">older</a>
-                {% endif %}
-            </span>
-            <span class="page-previous">
-                {% if page_obj.has_previous %}
-                    <a href="?page={{ page_obj.previous_page_number }}">newer</a>
-                {% endif %}
-            </span>
+            {% if page_obj.has_next %}
+            <a class="mdl-button mdl-js-button mdl-js-ripple-effect" href="?page={{ page_obj.next_page_number }}"><i class="material-icons">keyboard_arrow_left</i>older</a>
+            {% endif %}
+            {% if page_obj.has_previous %}
+            <a class="mdl-button mdl-js-button mdl-js-ripple-effect" href="?page={{ page_obj.previous_page_number }}">newer<i class="material-icons">keyboard_arrow_right</i></a>
+            {% endif %}
         </div>
-    {% endif %}
+        {% endif %}
+    </div>
 {% endif %}
 {% endblock %}
