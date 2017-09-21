@@ -19,13 +19,13 @@ class SequenceMapper(object):
         Maps from the first testing messageset to the second testing
         messageset.
         """
-        return 'test.messageset.2', max(0, 2 * sequence - 1)
+        return 'test.gates.messageset.2', max(0, 2 * sequence - 1)
 
     def map_test_messageset_2(self, sequence):
         """
         Maps from the second testing messageset back to the first.
         """
-        return 'test.messageset.1', int(floor(sequence / 2.0) + 1)
+        return 'test.gates.messageset.1', int(floor(sequence / 2.0) + 1)
 
     def map_forward(self, messageset, sequence):
         """
@@ -33,7 +33,7 @@ class SequenceMapper(object):
         returns the tuple (messageset, sequence) of the mapped messageset and
         sequence.
         """
-        if messageset == 'test.messageset.1':
+        if messageset == 'test.gates.messageset.1':
             return self.map_test_messageset_1(sequence)
         # If we cannot find any mapping, raise the exception
         raise NoMappingFound(
@@ -46,7 +46,7 @@ class SequenceMapper(object):
         returns the tuple (messageset, sequence) of the mapped messageset and
         sequence.
         """
-        if messageset == 'test.messageset.2':
+        if messageset == 'test.gates.messageset.2':
             return self.map_test_messageset_2(sequence)
         # If we cannot find any mapping, raise the exception
         raise NoMappingFound(
